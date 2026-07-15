@@ -4,6 +4,8 @@ namespace SystemBridge.Api.Services;
 
 public interface IInventorySyncService
 {
-    object ProcessOrder(OrderSyncRequest request);
-    object ApplyInventoryUpdate(InventoryUpdateRequest request);
+    Task<object> ProcessOrder(OrderSyncRequest request);
+    Task<object> ApplyInventoryUpdate(InventoryUpdateRequest request);
+    Task<List<InventoryItem>> GetInventoryAsync();
+    Task<List<OrderRecord>> GetOrdersAsync();
 }

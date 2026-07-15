@@ -16,16 +16,30 @@ public class SyncController : ControllerBase
     }
 
     [HttpPost("orders")]
-    public IActionResult ReceiveOrder([FromBody] OrderSyncRequest request)
+    public async Task<IActionResult> ReceiveOrder([FromBody] OrderSyncRequest request)
     {
-        var result = _inventorySyncService.ProcessOrder(request);
+        var result = await _inventorySyncService.ProcessOrder(request);
         return Ok(result);
     }
 
     [HttpPost("inventory")]
-    public IActionResult UpdateInventory([FromBody] InventoryUpdateRequest request)
+    public async Task<IActionResult> UpdateInventory([FromBody] InventoryUpdateRequest request)
     {
-        var result = _inventorySyncService.ApplyInventoryUpdate(request);
+        var result = await _inventorySyncService.ApplyInventoryUpdate(request);
+        return Ok(result);
+    }
+
+    [HttpGet("inventory")]
+    public async Task<IActionResult> GetInventory()
+    {
+        var result = await _inventorySyncService.GetInventoryAsync();
+        return Ok(result);
+    }
+
+    [HttpGet("orders")]
+    public async Task<IActionResult> GetOrders()
+    {
+        var result = await _inventorySyncService.GetOrdersAsync();
         return Ok(result);
     }
 }
