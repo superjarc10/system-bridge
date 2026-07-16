@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SystemBridge Order & Inventory UI</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; background: #f7f7f7; }
+    .layout { display: grid; gap: 1rem; max-width: 900px; }
+    .card { background: white; border: 1px solid #ddd; padding: 1rem; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    input, button { display: block; width: 100%; margin-top: 0.5rem; padding: 0.6rem; box-sizing: border-box; }
+    button { cursor: pointer; }
+    #orderResult, #inventoryResult { margin-top: 1rem; white-space: pre-wrap; font-family: monospace; }
+    table { width: 100%; border-collapse: collapse; margin-top: 0.8rem; }
+    th, td { border: 1px solid #ddd; padding: 0.5rem; text-align: left; }
+    th { background: #f0f0f0; }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <div class="card">
+      <h2>Place order</h2>
+      <input id="orderId" placeholder="Order ID" value="ORD-2001" />
+      <input id="sku" placeholder="SKU" value="SKU-001" />
+      <input id="quantity" placeholder="Quantity" value="3" type="number" />
+      <input id="status" placeholder="Status" value="Pending" />
+      <button onclick="submitOrder()">Submit order</button>
+      <div id="orderResult"></div>
+    </div>
+
+    <div class="card">
+      <h2>Inventory</h2>
+      <button onclick="loadInventory()">Refresh inventory</button>
+      <div id="inventoryList"></div>
+      <h3>Update inventory</h3>
+      <input id="invSku" placeholder="SKU" value="SKU-001" />
+      <input id="invDelta" placeholder="Quantity delta" value="5" type="number" />
+      <input id="invSource" placeholder="Source" value="UI" />
+      <button onclick="updateInventory()">Update inventory</button>
+      <div id="inventoryResult"></div>
+    </div>
+  </div>
+
+  <script>
+    const apiBase = 'http://localhost:5000/api/sync';
+
+    async function submitOrder() {
+      const payload = {
+        orderId: document.getElementById('orderId').value,
+        productSku: document.getElementById('sku').value,
+        quantity: Number(document.getElementById('quantity').value),
+        status: document.getElementById('status').value
+      };
+
+      const result = document.getElementById('orderResult');
+      result.textContent = 'Sending...';
+
+      try {
+        const response = await fetch(`${apiBase}/orders`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+        result.textContent = JSON.stringify(data, null, 2);
+        await loadInventory();
+      } catch (err) {
+        result.textContent = 'Error: ' + err.message;
+      }
+    }
+
+    async function loadInventory() {
+      const inventoryList = document.getElementById('inventoryList');
+      inventoryList.innerHTML = 'Loading...';
+
+      try {
+        const response = await fetch(`${apiBase}/inventory`);
+        const data = await response.json();
+
+        if (!Array.isArray(data) || data.length === 0) {
+          inventoryList.innerHTML = '<p>No inventory found.</p>';
+          return;
+        }
+
+        const rows = data.map(item => `
+          <tr>
+            <td>${item.productSku}</td>
+            <td>${item.quantityOnHand}</td>
+            <td>${new Date(item.updatedAt).toLocaleString()}</td>
+          </tr>
+        `).join('');
+
+        inventoryList.innerHTML = `
+          <table>
+            <thead>
+              <tr><th>SKU</th><th>On hand</th><th>Updated</th></tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        `;
+      } catch (err) {
+        inventoryList.innerHTML = 'Error loading inventory: ' + err.message;
+      }
+    }
+
+    async function updateInventory() {
+      const payload = {
+        productSku: document.getElementById('invSku').value,
+        quantityDelta: Number(document.getElementById('invDelta').value),
+        source: document.getElementById('invSource').value
+      };
+
+      const result = document.getElementById('inventoryResult');
+      result.textContent = 'Updating...';
+
+      try {
+        const response = await fetch(`${apiBase}/inventory`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+        result.textContent = JSON.stringify(data, null, 2);
+        await loadInventory();
+      } catch (err) {
+        result.textContent = 'Error: ' + err.message;
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', loadInventory);
+  </script>
+</body>
+</html>
