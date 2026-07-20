@@ -19,6 +19,13 @@
 <body>
   <div class="layout">
     <div class="card">
+      <h2>Authentication</h2>
+      <input id="username" placeholder="Username" value="admin" />
+      <input id="password" placeholder="Password" value="password" />
+      <button onclick="login()">Login</button>
+      <div id="authResult"></div>
+    </div>
+    <div class="card">
       <h2>Place order</h2>
       <input id="orderId" placeholder="Order ID" value="ORD-2001" />
       <input id="sku" placeholder="SKU" value="SKU-001" />
@@ -43,6 +50,43 @@
 
   <script>
     const apiBase = 'http://localhost:5000/api/sync';
+    const authBase = 'http://localhost:5000/api/auth';
+    let jwtToken = '';
+
+    function getHeaders() {
+      return {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${jwtToken}`
+      };
+    }
+
+    async function login() {
+      const result = document.getElementById('authResult');
+      result.textContent = 'Logging in...';
+
+      try {
+        const response = await fetch(`${authBase}/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: document.getElementById('username').value,
+            password: document.getElementById('password').value
+          })
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          result.textContent = JSON.stringify(data, null, 2);
+          return;
+        }
+
+        jwtToken = data.token;
+        result.textContent = `Logged in. Token expires at ${new Date(data.expiresAt).toLocaleString()}`;
+        await loadInventory();
+      } catch (err) {
+        result.textContent = 'Error: ' + err.message;
+      }
+    }
 
     async function submitOrder() {
       const payload = {
@@ -58,7 +102,7 @@
       try {
         const response = await fetch(`${apiBase}/orders`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getHeaders(),
           body: JSON.stringify(payload)
         });
 
@@ -75,7 +119,9 @@
       inventoryList.innerHTML = 'Loading...';
 
       try {
-        const response = await fetch(`${apiBase}/inventory`);
+        const response = await fetch(`${apiBase}/inventory`, {
+          headers: getHeaders()
+        });
         const data = await response.json();
 
         if (!Array.isArray(data) || data.length === 0) {
@@ -117,7 +163,7 @@
       try {
         const response = await fetch(`${apiBase}/inventory`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getHeaders(),
           body: JSON.stringify(payload)
         });
 

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SystemBridge.Api.Models;
 using SystemBridge.Api.Services;
@@ -6,6 +7,7 @@ namespace SystemBridge.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class SyncController : ControllerBase
 {
     private readonly IInventorySyncService _inventorySyncService;
