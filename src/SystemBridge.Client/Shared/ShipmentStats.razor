@@ -1,0 +1,80 @@
+@using SystemBridge.Client.Models
+
+<section class="shipment-stats" aria-label="Shipment statistics">
+    <div class="stats-heading"><strong>Shipment check</strong><span>@Stats.Count product types</span></div>
+    @if (Stats.Count == 0)
+    {
+        <p class="stats-empty">Add shipment items to calculate product totals.</p>
+    }
+    else
+    {
+        <div class="stats-list">
+            @foreach (var stat in Stats)
+            {
+                <div class="stat-line @(stat.IsEnough ? "stat-enough" : "stat-short")">
+                    <strong>@stat.ProductName</strong>
+                    <span>Needed @stat.Required.ToString("N0")</span>
+                    @if (stat.PalletCount > 0)
+                    {
+                        <span>Pallets @stat.PalletCount.ToString("N0")</span>
+                    }
+                    @if (stat.PackagingCount > 0)
+                    {
+                        <span>Packaging @stat.PackagingCount.ToString("N0")</span>
+                    }
+                    <span>Products @stat.PackagedProducts.ToString("N0")</span>
+                    @if (stat.IsEnough && stat.Surplus > 0)
+                    {
+                        <span>Over @stat.Surplus.ToString("N0")</span>
+                    }
+                    <span>@(stat.IsEnough ? $"Over {stat.Remaining:N0}" : $"Short {Math.Abs(stat.Remaining):N0}")</span>
+                </div>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter] public int ShipmentId { get; set; }
+    [Parameter] public IReadOnlyList<ShipmentItem> ShipmentItems { get; set; } = [];
+    [Parameter] public IReadOnlyList<OrderItem> OrderItems { get; set; } = [];
+    [Parameter] public IReadOnlyList<ProductPackaging> Packaging { get; set; } = [];
+    [Parameter] public IReadOnlyList<Product> Products { get; set; } = [];
+    [Parameter] public IReadOnlyList<Pallet> Pallets { get; set; } = [];
+
+    private IReadOnlyList<ProductStat> Stats => ShipmentItems
+        .Where(item => item.ShipmentId == ShipmentId)
+        .Select(item => new
+        {
+            ShipmentItem = item,
+            OrderItem = OrderItems.FirstOrDefault(orderItem => orderItem.Id == item.OrderItemId),
+            Packaging = Packaging.FirstOrDefault(packaging => packaging.Id == item.ProductPackagingId),
+            Pallet = item.PalletId.HasValue ? Pallets.FirstOrDefault(pallet => pallet.Id == item.PalletId.Value) : null
+        })
+        .Where(item => item.OrderItem is not null)
+        .GroupBy(item => item.OrderItem!.ProductId)
+        .Select(group =>
+        {
+            var required = group
+                .Select(item => item.OrderItem!)
+                .DistinctBy(item => item.Id)
+                .Sum(item => item.Quantity);
+            var palletCount = group.Where(item => item.Pallet is not null).Sum(item => item.ShipmentItem.Quantity);
+            var packagingCount = group.Where(item => item.Pallet is null).Sum(item => item.ShipmentItem.Quantity);
+            var packagedProducts = group.Sum(item => item.ShipmentItem.Quantity * (item.Pallet?.Quantity ?? 1) * (item.Packaging?.Pieces ?? 1));
+            return new ProductStat(
+                Products.FirstOrDefault(product => product.Id == group.Key)?.Name ?? $"Product #{group.Key}",
+                required,
+                packagedProducts,
+                palletCount,
+                packagingCount,
+                packagedProducts - required);
+        })
+        .ToList();
+
+    private sealed record ProductStat(string ProductName, int Required, int PackagedProducts, int PalletCount, int PackagingCount, int Remaining)
+    {
+        public bool IsEnough => Remaining >= 0;
+        public int Surplus => Math.Max(Remaining, 0);
+    }
+}

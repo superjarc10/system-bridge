@@ -1,0 +1,19 @@
+<div class="light-color-picker" role="radiogroup" aria-label="Color">
+    @foreach (var color in Colors)
+    {
+        <button type="button" class="color-swatch @(Value == color ? "color-selected" : "")" style="background-color: @color" title="@color" aria-label="@color" @onclick="() => Select(color)"></button>
+    }
+</div>
+
+@code {
+    [Parameter] public string Value { get; set; } = "#D9EAD3";
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+
+    private static readonly string[] Colors = [
+        "#F4CCCC", "#FCE5CD", "#FFF2CC", "#D9EAD3", "#D0E0E3", "#CFE2F3", "#D9D2E9", "#EAD1DC", "#F9CB9C", "#FFE599",
+        "#B6D7A8", "#A2C4C9", "#9FC5E8", "#B4A7D6", "#D5A6BD", "#F4B183", "#FFD966", "#93C47D", "#76A5AF", "#6FA8DC",
+        "#8E7CC3", "#C27BA0", "#F8D7DA", "#DDEBF7", "#E2F0D9", "#FFF2F2", "#EAF4EA", "#E8F1F8", "#F0EAF7", "#F7EAF0"
+    ];
+
+    private Task Select(string color) => ValueChanged.InvokeAsync(color);
+}

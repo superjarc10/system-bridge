@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: systembridge-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: systembridge
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - systembridge-postgres-data:/var/lib/postgresql/data
+
+volumes:
+  systembridge-postgres-data:

@@ -1,0 +1,16 @@
+namespace SystemBridge.Api.Models;
+
+public class Shipment
+{
+    public int Id { get; set; }
+    public string? ShipmentNumber { get; set; }
+    public int CustomerId { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? ShippedAt { get; set; }
+    public DateTime? ScheduledDate { get; set; }
+    public string Color { get; set; } = "#D9EAD3";
+    public ShipmentStatus Status { get; set; } = ShipmentStatus.Planned;
+
+    public Customer Customer { get; set; } = null!;
+    public ICollection<ShipmentItem> ShipmentItems { get; set; } = new List<ShipmentItem>();
+}

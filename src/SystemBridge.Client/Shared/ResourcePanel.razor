@@ -1,0 +1,14 @@
+<section class="panel resource-panel">
+    <div class="panel-heading heading-row">
+        <div><span class="panel-kicker">WORKSPACE</span><h2>@Title <span class="count">@Count</span></h2></div>
+        <button class="secondary" @onclick="OnRefresh">Refresh</button>
+    </div>
+    @ChildContent
+</section>
+
+@code {
+    [Parameter] public string Title { get; set; } = string.Empty;
+    [Parameter] public int Count { get; set; }
+    [Parameter] public EventCallback OnRefresh { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

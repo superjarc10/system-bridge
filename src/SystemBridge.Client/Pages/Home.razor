@@ -1,0 +1,168 @@
+@page "/"
+@inject ApiClient Api
+
+<PageTitle>SystemBridge Management</PageTitle>
+<header class="hero management-hero">
+    <p class="eyebrow">SYSTEMBRIDGE MANAGEMENT</p>
+    <div class="hero-row">
+        <div><h1>Keep the operation moving.</h1><p class="lede">Manage customers, products, orders, and fulfillment from one working view.</p></div>
+        @if (Api.IsAuthenticated) { <span class="status-badge">CONNECTED</span> }
+    </div>
+</header>
+
+@if (!Api.IsAuthenticated)
+{
+    <section class="panel login-panel login-card">
+        <div class="panel-heading"><span class="panel-kicker">ACCESS</span><h2>Sign in to continue</h2></div>
+        <div class="form-grid"><label>Username <input @bind="login.Username" /></label><label>Password <input type="password" @bind="login.Password" /></label></div>
+        <button class="primary" @onclick="LoginAsync">Sign in</button>
+        @if (!string.IsNullOrWhiteSpace(message)) { <p class="message">@message</p> }
+    </section>
+}
+else
+{
+    <div class="management-layout">
+        <nav class="resource-rail" aria-label="Management resources">
+            <p class="rail-label">WORKSPACES</p>
+            @foreach (var resource in resources)
+            {
+                <button class="rail-button @(activeResource == resource ? "rail-active" : "")" @onclick="() => SelectResource(resource)">
+                    <span class="rail-index">@ResourceIndex(resource)</span>@resource
+                </button>
+            }
+        </nav>
+
+        <main class="management-content">
+            @if (activeResource == "Customers")
+            {
+                <ResourcePanel Title="Customers" Count="customers.Count" OnRefresh="LoadCustomersAsync">
+                    <div class="panel-toolbar"><span>People and accounts connected to the operation.</span><button class="primary" @onclick="OpenCustomerForm">+ Add customer</button></div>
+                    @if (showCustomerForm) { <div class="entry-form"><div class="form-grid"><label>Name <input @bind="customerForm.Name" /></label><label>Country <input @bind="customerForm.Country" /></label></div><FormActions OnSave="SaveCustomerAsync" OnCancel="CancelForms" Label="@(customerId.HasValue ? "Update customer" : "Create customer")" /></div> }
+                    <EntityTable>@foreach (var item in customers) { <tr><td><strong>@item.Name</strong><small>@item.Country</small></td><td class="actions"><button class="link-button" @onclick="() => EditCustomer(item)">Edit</button><button class="danger-button" @onclick="() => DeleteCustomerAsync(item.Id)">Delete</button></td></tr> }</EntityTable>
+                </ResourcePanel>
+            }
+            else if (activeResource == "Products")
+            {
+                <div class="nested-switch"><button class="@(productView == "Products" ? "nested-active" : "")" @onclick="ShowProducts">Products</button><button class="@(productView == "Packaging" ? "nested-active" : "")" @onclick="ShowPackaging">Packaging</button></div>
+                @if (productView == "Products")
+                {
+                    <ResourcePanel Title="Products" Count="products.Count" OnRefresh="LoadProductsAsync">
+                        <div class="panel-toolbar"><span>Catalog and production specifications.</span><button class="primary" @onclick="OpenProductForm">+ Add product</button></div>
+                        @if (showProductForm) { <div class="entry-form"><div class="form-grid"><label>Name <input @bind="productForm.Name" /></label><label>Description <input @bind="productForm.Description" /></label><label>Price / 1000 <input type="number" @bind="productForm.PricePer1000" /></label><label>Capacity / hour <input type="number" @bind="productForm.ManufacturingCapacityPerHour" /></label><label>Weight / 1000 <input type="number" @bind="productForm.WeightPer1000" /></label></div><FormActions OnSave="SaveProductAsync" OnCancel="CancelForms" Label="@(productId.HasValue ? "Update product" : "Create product")" /></div> }
+                        <EntityTable>
+                            @foreach (var item in products)
+                            {
+                                <tr><td><button class="disclosure-button" @onclick="() => ToggleProductDetails(item.Id)">@(expandedProductId == item.Id ? "▾" : "▸")</button><strong>@item.Name</strong><small>@item.Description</small></td><td>@item.PricePer1000?.ToString("C")</td><td class="actions"><button class="link-button" @onclick="() => EditProduct(item)">Edit</button><button class="danger-button" @onclick="() => DeleteProductAsync(item.Id)">Delete</button></td></tr>
+                                @if (expandedProductId == item.Id)
+                                {
+                                    <tr class="detail-row"><td colspan="3"><div class="detail-grid"><span><small>Capacity / hour</small>@item.ManufacturingCapacityPerHour.ToString("N0")</span><span><small>Weight / 1000</small>@item.WeightPer1000.ToString("N0")</span><span><small>Packaging options</small>@packaging.Count(x => x.ProductId == item.Id).ToString("N0")</span></div></td></tr>
+                                }
+                            }
+                        </EntityTable>
+                    </ResourcePanel>
+                }
+                else
+                {
+                    <ResourcePanel Title="Product packaging" Count="packaging.Count" OnRefresh="LoadPackagingAsync">
+                        <div class="panel-toolbar"><span>Packaging formats available for each product.</span><button class="primary" @onclick="OpenPackagingForm">+ Add packaging</button></div>
+                        @if (showPackagingForm) { <div class="entry-form"><div class="form-grid"><label>Product <select @bind="packagingForm.ProductId">@foreach (var item in products) { <option value="@item.Id">@item.Name</option> }</select></label><label>Type <select @bind="packagingForm.PackagingTypeId"><option value="">Select type</option>@foreach (var type in packagingTypes) { <option value="@type.Id">@type.Name</option> }</select></label><label>Pieces <input type="number" @bind="packagingForm.Pieces" /></label></div><FormActions OnSave="SavePackagingAsync" OnCancel="CancelForms" Label="@(packagingId.HasValue ? "Update packaging" : "Create packaging")" /></div> }
+                        <EntityTable>
+                            @foreach (var item in packaging)
+                            {
+                                <tr><td><button class="disclosure-button" @onclick="() => TogglePackagingDetails(item.Id)">@(expandedPackagingId == item.Id ? "▾" : "▸")</button><strong>@ProductName(item.ProductId)</strong><small>@item.Type</small></td><td>@item.Pieces.ToString("N0") pieces</td><td class="actions"><button class="link-button" @onclick="() => EditPackaging(item)">Edit</button><button class="danger-button" @onclick="() => DeletePackagingAsync(item.Id)">Delete</button></td></tr>
+                                @if (expandedPackagingId == item.Id)
+                                {
+                                    <tr class="detail-row"><td colspan="3"><div class="detail-grid"><span><small>Product</small>@ProductName(item.ProductId)</span><span><small>Packaging type</small>@item.Type</span><span><small>Pieces per package</small>@item.Pieces.ToString("N0")</span></div></td></tr>
+                                }
+                            }
+                        </EntityTable>
+                    </ResourcePanel>
+                }
+                @if (productView == "Packaging")
+                {
+                    <ResourcePanel Title="Packaging types" Count="packagingTypes.Count" OnRefresh="LoadPackagingTypesAsync">
+                        <div class="panel-toolbar"><span>Reusable types for packaging records.</span><button class="primary" @onclick="OpenPackagingTypeForm">+ Add type</button></div>
+                        @if (showPackagingTypeForm) { <div class="entry-form"><div class="form-grid"><label>Name <input @bind="packagingTypeForm.Name" /></label></div><FormActions OnSave="SavePackagingTypeAsync" OnCancel="CancelForms" Label="@(packagingTypeId.HasValue ? "Update type" : "Create type")" /></div> }
+                        <EntityTable>@foreach (var type in packagingTypes) { <tr><td><strong>@type.Name</strong></td><td class="actions"><button class="link-button" @onclick="() => EditPackagingType(type)">Edit</button><button class="danger-button" @onclick="() => DeletePackagingTypeAsync(type.Id)">Delete</button></td></tr> }</EntityTable>
+                    </ResourcePanel>
+                }
+            }
+            else if (activeResource == "Orders")
+            {
+                <ResourcePanel Title="Orders" Count="orders.Count" OnRefresh="LoadOrdersAsync">
+                    <div class="panel-toolbar"><span>Customer orders and their current status.</span><button class="primary" @onclick="OpenOrderForm">+ Add order</button></div>
+                    @if (showOrderForm) { <div class="entry-form"><div class="form-grid"><label>Order number <input @bind="orderForm.OrderNumber" placeholder="ORD-2026-001" /></label><label>Customer <select @bind="orderForm.CustomerId">@foreach (var item in customers) { <option value="@item.Id">@item.Name</option> }</select></label><label>Order date <input type="date" @bind-value="orderForm.ScheduledDate" @bind-value:format="yyyy-MM-dd" /></label><label>Status <select @bind="orderForm.Status">@foreach (var status in Enum.GetValues<OrderStatus>()) { <option value="@status">@status</option> }</select></label><label>Notes <input @bind="orderForm.Notes" /></label><label>Color <LightColorPicker @bind-Value="orderForm.Color" /></label></div><FormActions OnSave="SaveOrderAsync" OnCancel="CancelForms" Label="@(orderId.HasValue ? "Update order" : "Create order")" /></div> }
+                    <EntityTable>
+                        @foreach (var item in orders)
+                        {
+                            <tr style="border-left: 5px solid @item.Color"><td><button class="disclosure-button" @onclick="() => ToggleOrderItems(item.Id)">@(expandedOrderId == item.Id ? "▾" : "▸")</button><strong>@(string.IsNullOrWhiteSpace(item.OrderNumber) ? $"Order #{item.Id}" : item.OrderNumber)</strong><small>@CustomerName(item.CustomerId) · @(item.ScheduledDate?.ToLocalTime().ToString("d") ?? "No date")</small></td><td><span class="status-badge">@item.Status</span></td><td class="actions"><button class="link-button" @onclick="() => EditOrder(item)">Edit</button><button class="danger-button" @onclick="() => DeleteOrderAsync(item.Id)">Delete</button></td></tr>
+                            @if (expandedOrderId == item.Id)
+                            {
+                                <tr class="child-row"><td colspan="3"><div class="child-heading"><strong>Order items</strong><button class="secondary" @onclick="() => OpenOrderItemForm(item.Id)">+ Add order item</button></div>@if (showOrderItemForm && orderItemForm.OrderId == item.Id) { <div class="entry-form"><div class="form-grid"><label>Product <select @bind="orderItemForm.ProductId">@foreach (var product in products) { <option value="@product.Id">@product.Name</option> }</select></label><label>Quantity <input type="number" @bind="orderItemForm.Quantity" /></label></div><FormActions OnSave="SaveOrderItemAsync" OnCancel="CancelForms" Label="@(orderItemId.HasValue ? "Update item" : "Add item")" /></div> }<EntityTable>@foreach (var child in orderItems.Where(x => x.OrderId == item.Id)) { <tr><td><strong>@ProductName(child.ProductId)</strong></td><td>@child.Quantity.ToString("N0") units</td><td class="actions"><button class="link-button" @onclick="() => EditOrderItem(child)">Edit</button><button class="danger-button" @onclick="() => DeleteOrderItemAsync(child.Id)">Delete</button></td></tr> }</EntityTable></td></tr>
+                            }
+                        }
+                    </EntityTable>
+                </ResourcePanel>
+            }
+            else if (activeResource == "Shipments")
+            {
+                <ResourcePanel Title="Shipments" Count="shipments.Count" OnRefresh="LoadShipmentsAsync">
+                    <div class="panel-toolbar"><span>Outbound fulfillment and delivery status.</span><button class="primary" @onclick="OpenShipmentForm">+ Add shipment</button></div>
+                    @if (showShipmentForm) { <div class="entry-form"><div class="form-grid"><label>Shipment number <input @bind="shipmentForm.ShipmentNumber" placeholder="SHP-20260825-001" /></label><label>Customer <select @bind="shipmentForm.CustomerId">@foreach (var item in customers) { <option value="@item.Id">@item.Name</option> }</select></label><label>Shipment date <input type="date" @bind-value="shipmentForm.ScheduledDate" @bind-value:format="yyyy-MM-dd" /></label><label>Status <select @bind="shipmentForm.Status">@foreach (var status in Enum.GetValues<ShipmentStatus>()) { <option value="@status">@status</option> }</select></label><label>Color <LightColorPicker @bind-Value="shipmentForm.Color" /></label></div><FormActions OnSave="SaveShipmentAsync" OnCancel="CancelForms" Label="@(shipmentId.HasValue ? "Update shipment" : "Create shipment")" /></div> }
+                    <EntityTable>
+                        @foreach (var item in shipments)
+                        {
+                            <tr style="border-left: 5px solid @item.Color"><td><button class="disclosure-button" @onclick="() => ToggleShipmentItems(item.Id)">@(expandedShipmentId == item.Id ? "▾" : "▸")</button><strong>@(string.IsNullOrWhiteSpace(item.ShipmentNumber) ? $"Shipment #{item.Id}" : item.ShipmentNumber)</strong><small>@CustomerName(item.CustomerId) · @(item.ScheduledDate?.ToLocalTime().ToString("d") ?? "No date")</small></td><td><span class="status-badge">@item.Status</span></td><td class="actions"><button class="link-button" @onclick="() => EditShipment(item)">Edit</button><button class="danger-button" @onclick="() => DeleteShipmentAsync(item.Id)">Delete</button></td></tr>
+                            @if (expandedShipmentId == item.Id)
+                            {
+                                <tr class="child-row"><td colspan="3"><ShipmentStats ShipmentId="item.Id" ShipmentItems="shipmentItems" OrderItems="orderItems" Packaging="packaging" Products="products" Pallets="pallets" /><div class="child-heading"><strong>Shipment items</strong><button class="secondary" @onclick="() => OpenShipmentItemForm(item.Id)">+ Add shipment item</button></div>@if (showShipmentItemForm && shipmentItemForm.ShipmentId == item.Id) { <div class="entry-form"><div class="form-grid"><label>Order item <select @bind="shipmentItemForm.OrderItemId">@foreach (var orderItem in orderItems) { var order = orders.FirstOrDefault(x => x.Id == orderItem.OrderId); <option value="@orderItem.Id">@(string.IsNullOrWhiteSpace(order?.OrderNumber) ? $"Order #{orderItem.OrderId}" : order.OrderNumber) - @ProductName(orderItem.ProductId)</option> }</select></label><label>Packaging <select @bind="shipmentItemForm.ProductPackagingId">@foreach (var package in packaging) { <option value="@package.Id">@ProductName(package.ProductId)</option> }</select></label><label>Pallet <select @bind="shipmentItemForm.PalletId"><option value="">Without pallet</option>@foreach (var pallet in pallets) { <option value="@pallet.Id">@pallet.Name (@pallet.Quantity.ToString("N0") packages)</option> }</select></label><label>@(shipmentItemForm.PalletId.HasValue ? "Pallet count" : "Packaging count") <input type="number" @bind="shipmentItemForm.Quantity" /></label></div><FormActions OnSave="SaveShipmentItemAsync" OnCancel="CancelForms" Label="@(shipmentItemId.HasValue ? "Update item" : "Add item")" /></div> }<EntityTable>@foreach (var child in shipmentItems.Where(x => x.ShipmentId == item.Id)) { <tr><td><strong>Order item #@child.OrderItemId</strong></td><td>@child.Quantity.ToString("N0") @(child.PalletId.HasValue ? "pallets" : "packages")</td><td class="actions"><button class="link-button" @onclick="() => EditShipmentItem(child)">Edit</button><button class="danger-button" @onclick="() => DeleteShipmentItemAsync(child.Id)">Delete</button></td></tr> }</EntityTable></td></tr>
+                            }
+                        }
+                    </EntityTable>
+                </ResourcePanel>
+            }
+            else
+            {
+                <ResourcePanel Title="Pallets" Count="pallets.Count" OnRefresh="LoadPalletsAsync">
+                    <div class="panel-toolbar"><span>Standalone pallet definitions.</span><button class="primary" @onclick="OpenPalletForm">+ Add pallet</button></div>
+                    @if (showPalletForm) { <div class="entry-form"><div class="form-grid"><label>Name <input @bind="palletForm.Name" /></label><label>Description <input @bind="palletForm.Description" /></label><label>Quantity <input type="number" @bind="palletForm.Quantity" /></label></div><FormActions OnSave="SavePalletAsync" OnCancel="CancelForms" Label="@(palletId.HasValue ? "Update pallet" : "Create pallet")" /></div> }
+                    <EntityTable>@foreach (var item in pallets) { <tr><td><strong>@item.Name</strong><small>@item.Description</small></td><td>@item.Quantity.ToString("N0") units</td><td class="actions"><button class="link-button" @onclick="() => EditPallet(item)">Edit</button><button class="danger-button" @onclick="() => DeletePalletAsync(item.Id)">Delete</button></td></tr> }</EntityTable>
+                </ResourcePanel>
+            }
+        </main>
+    </div>
+}
+
+@code {
+    private readonly string[] resources = ["Customers", "Products", "Orders", "Shipments", "Pallets"];
+    private string activeResource = "Customers"; private string productView = "Products";
+    private readonly LoginRequest login = new() { Username = "admin", Password = "password" }; private string message = string.Empty;
+    private List<Customer> customers = []; private List<Product> products = []; private List<ProductPackaging> packaging = []; private List<PackagingType> packagingTypes = []; private List<Pallet> pallets = []; private List<Order> orders = []; private List<OrderItem> orderItems = []; private List<Shipment> shipments = []; private List<ShipmentItem> shipmentItems = []; private int? expandedProductId; private int? expandedPackagingId; private int? expandedOrderId; private int? expandedShipmentId;
+    private CustomerRequest customerForm = new(); private int? customerId; private bool showCustomerForm; private ProductRequest productForm = new(); private int? productId; private bool showProductForm; private ProductPackagingRequest packagingForm = new(); private int? packagingId; private bool showPackagingForm; private PackagingTypeRequest packagingTypeForm = new(); private int? packagingTypeId; private bool showPackagingTypeForm; private PalletRequest palletForm = new(); private int? palletId; private bool showPalletForm; private OrderRequest orderForm = new(); private int? orderId; private bool showOrderForm; private OrderItemRequest orderItemForm = new(); private int? orderItemId; private bool showOrderItemForm; private ShipmentRequest shipmentForm = new(); private int? shipmentId; private bool showShipmentForm; private ShipmentItemRequest shipmentItemForm = new(); private int? shipmentItemId; private bool showShipmentItemForm;
+
+    private async Task LoginAsync() { try { var response = await Api.LoginAsync(login); message = response is null ? "Invalid username or password." : string.Empty; if (response is not null) await LoadAllAsync(); } catch (HttpRequestException) { message = "The API is unavailable. Start the backend and try again."; } }
+    private async Task LoadAllAsync() { customers = await Api.GetCustomersAsync(); products = await Api.GetProductsAsync(); packaging = await Api.GetProductPackagingAsync(); packagingTypes = await Api.GetPackagingTypesAsync(); pallets = await Api.GetPalletsAsync(); orders = await Api.GetOrdersAsync(); orderItems = await Api.GetOrderItemsAsync(); shipments = await Api.GetShipmentsAsync(); shipmentItems = await Api.GetShipmentItemsAsync(); }
+    private void SelectResource(string resource) { activeResource = resource; CancelForms(); }
+    private void ShowProducts() { productView = "Products"; CancelForms(); }
+    private void ShowPackaging() { productView = "Packaging"; CancelForms(); }
+    private void CancelForms() { showCustomerForm = showProductForm = showPackagingForm = showPackagingTypeForm = showPalletForm = showOrderForm = showOrderItemForm = showShipmentForm = showShipmentItemForm = false; customerId = productId = packagingId = packagingTypeId = palletId = orderId = orderItemId = shipmentId = shipmentItemId = null; }
+    private string ResourceIndex(string resource) => resource switch { "Customers" => "01", "Products" => "02", "Orders" => "03", "Shipments" => "04", _ => "05" };
+    private void OpenCustomerForm() { CancelForms(); showCustomerForm = true; customerForm = new(); } private void OpenProductForm() { CancelForms(); showProductForm = true; productForm = new(); } private void OpenPackagingForm() { CancelForms(); showPackagingForm = true; packagingForm = new() { ProductId = products.FirstOrDefault()?.Id ?? 0, PackagingTypeId = packagingTypes.FirstOrDefault()?.Id }; } private void OpenPackagingTypeForm() { CancelForms(); showPackagingTypeForm = true; packagingTypeForm = new(); } private void OpenPalletForm() { CancelForms(); showPalletForm = true; palletForm = new(); } private void OpenOrderForm() { CancelForms(); showOrderForm = true; orderForm = new() { OrderNumber = NewOrderNumber(), CustomerId = customers.FirstOrDefault()?.Id ?? 0, ScheduledDate = DateTime.Today }; } private void OpenOrderItemForm(int orderId) { CancelForms(); expandedOrderId = orderId; showOrderItemForm = true; orderItemForm = new() { OrderId = orderId, ProductId = products.FirstOrDefault()?.Id ?? 0, Quantity = 1 }; } private void OpenShipmentForm() { CancelForms(); showShipmentForm = true; shipmentForm = new() { ShipmentNumber = NewShipmentNumber(), CustomerId = customers.FirstOrDefault()?.Id ?? 0, ScheduledDate = DateTime.Today }; } private void OpenShipmentItemForm(int shipmentId) { CancelForms(); expandedShipmentId = shipmentId; showShipmentItemForm = true; shipmentItemForm = new() { ShipmentId = shipmentId, OrderItemId = orderItems.FirstOrDefault()?.Id ?? 0, ProductPackagingId = packaging.FirstOrDefault()?.Id ?? 0, Quantity = 1 }; }
+    private string NewOrderNumber() => $"ORD-{DateTime.Today:yyyyMMdd}-{orders.Count + 1:000}";
+    private string NewShipmentNumber() => $"SHP-{DateTime.Today:yyyyMMdd}-{shipments.Count + 1:000}";
+    private void ToggleProductDetails(int id) { expandedProductId = expandedProductId == id ? null : id; }
+    private void TogglePackagingDetails(int id) { expandedPackagingId = expandedPackagingId == id ? null : id; }
+    private void ToggleOrderItems(int id) { expandedOrderId = expandedOrderId == id ? null : id; CancelForms(); }
+    private void ToggleShipmentItems(int id) { expandedShipmentId = expandedShipmentId == id ? null : id; CancelForms(); }
+    private Task LoadCustomersAsync() => Reload(() => Api.GetCustomersAsync(), value => customers = value); private Task LoadProductsAsync() => Reload(() => Api.GetProductsAsync(), value => products = value); private Task LoadPackagingAsync() => Reload(() => Api.GetProductPackagingAsync(), value => packaging = value); private Task LoadPackagingTypesAsync() => Reload(() => Api.GetPackagingTypesAsync(), value => packagingTypes = value); private Task LoadPalletsAsync() => Reload(() => Api.GetPalletsAsync(), value => pallets = value); private Task LoadOrdersAsync() => Reload(() => Api.GetOrdersAsync(), value => orders = value); private Task LoadOrderItemsAsync() => Reload(() => Api.GetOrderItemsAsync(), value => orderItems = value); private Task LoadShipmentsAsync() => Reload(() => Api.GetShipmentsAsync(), value => shipments = value); private Task LoadShipmentItemsAsync() => Reload(() => Api.GetShipmentItemsAsync(), value => shipmentItems = value); private static async Task Reload<T>(Func<Task<List<T>>> load, Action<List<T>> assign) { assign(await load()); }
+    private string CustomerName(int id) => customers.FirstOrDefault(x => x.Id == id)?.Name ?? $"Customer #{id}"; private string ProductName(int id) => products.FirstOrDefault(x => x.Id == id)?.Name ?? $"Product #{id}";
+    private async Task SaveCustomerAsync() { if (customerId is int id) await Api.UpdateCustomerAsync(id, customerForm); else await Api.AddCustomerAsync(customerForm); await LoadCustomersAsync(); CancelForms(); } private void EditCustomer(Customer item) { CancelForms(); customerId = item.Id; customerForm = new() { Name = item.Name, Country = item.Country }; showCustomerForm = true; } private async Task DeleteCustomerAsync(int id) { await Api.RemoveCustomerAsync(id); await LoadCustomersAsync(); }
+    private async Task SaveProductAsync() { if (productId is int id) await Api.UpdateProductAsync(id, productForm); else await Api.AddProductAsync(productForm); await LoadProductsAsync(); CancelForms(); } private void EditProduct(Product item) { CancelForms(); productId = item.Id; productForm = new() { Name = item.Name, Description = item.Description, PricePer1000 = item.PricePer1000, ManufacturingCapacityPerHour = item.ManufacturingCapacityPerHour, WeightPer1000 = item.WeightPer1000 }; showProductForm = true; } private async Task DeleteProductAsync(int id) { await Api.RemoveProductAsync(id); await LoadProductsAsync(); }
+    private async Task SavePackagingAsync() { if (packagingId is int id) await Api.UpdateProductPackagingAsync(id, packagingForm); else await Api.AddProductPackagingAsync(packagingForm); await LoadPackagingAsync(); CancelForms(); } private void EditPackaging(ProductPackaging item) { CancelForms(); packagingId = item.Id; packagingForm = new() { ProductId = item.ProductId, PackagingTypeId = item.PackagingTypeId, Pieces = item.Pieces }; showPackagingForm = true; } private async Task DeletePackagingAsync(int id) { await Api.RemoveProductPackagingAsync(id); await LoadPackagingAsync(); }
+    private async Task SavePackagingTypeAsync() { if (packagingTypeId is int id) await Api.UpdatePackagingTypeAsync(id, packagingTypeForm); else await Api.AddPackagingTypeAsync(packagingTypeForm); await LoadPackagingTypesAsync(); CancelForms(); } private void EditPackagingType(PackagingType type) { CancelForms(); packagingTypeId = type.Id; packagingTypeForm = new() { Name = type.Name }; showPackagingTypeForm = true; } private async Task DeletePackagingTypeAsync(int id) { await Api.RemovePackagingTypeAsync(id); await LoadPackagingTypesAsync(); }
+    private async Task SavePalletAsync() { if (palletId is int id) await Api.UpdatePalletAsync(id, palletForm); else await Api.AddPalletAsync(palletForm); await LoadPalletsAsync(); CancelForms(); } private void EditPallet(Pallet pallet) { CancelForms(); palletId = pallet.Id; palletForm = new() { Name = pallet.Name, Description = pallet.Description, Quantity = pallet.Quantity }; showPalletForm = true; } private async Task DeletePalletAsync(int id) { await Api.RemovePalletAsync(id); await LoadPalletsAsync(); }
+    private async Task SaveOrderAsync() { if (orderId is int id) await Api.UpdateOrderAsync(id, orderForm); else await Api.AddOrderAsync(orderForm); await LoadOrdersAsync(); CancelForms(); } private void EditOrder(Order item) { CancelForms(); orderId = item.Id; orderForm = new() { OrderNumber = item.OrderNumber, CustomerId = item.CustomerId, CreatedAt = item.CreatedAt, ScheduledDate = item.ScheduledDate, Color = item.Color, Status = item.Status, Notes = item.Notes }; showOrderForm = true; } private async Task DeleteOrderAsync(int id) { await Api.RemoveOrderAsync(id); await LoadOrdersAsync(); }
+    private async Task SaveOrderItemAsync() { if (orderItemId is int id) await Api.UpdateOrderItemAsync(id, orderItemForm); else await Api.AddOrderItemAsync(orderItemForm); await LoadOrderItemsAsync(); CancelForms(); } private void EditOrderItem(OrderItem item) { CancelForms(); orderItemId = item.Id; orderItemForm = new() { OrderId = item.OrderId, ProductId = item.ProductId, Quantity = item.Quantity }; showOrderItemForm = true; } private async Task DeleteOrderItemAsync(int id) { await Api.RemoveOrderItemAsync(id); await LoadOrderItemsAsync(); }
+    private async Task SaveShipmentAsync() { if (shipmentId is int id) await Api.UpdateShipmentAsync(id, shipmentForm); else await Api.AddShipmentAsync(shipmentForm); await LoadShipmentsAsync(); CancelForms(); } private void EditShipment(Shipment item) { CancelForms(); shipmentId = item.Id; shipmentForm = new() { ShipmentNumber = item.ShipmentNumber, CustomerId = item.CustomerId, CreatedAt = item.CreatedAt, ScheduledDate = item.ScheduledDate, ShippedAt = item.ShippedAt, Color = item.Color, Status = item.Status }; showShipmentForm = true; } private async Task DeleteShipmentAsync(int id) { await Api.RemoveShipmentAsync(id); await LoadShipmentsAsync(); }
+    private async Task SaveShipmentItemAsync() { if (shipmentItemId is int id) await Api.UpdateShipmentItemAsync(id, shipmentItemForm); else await Api.AddShipmentItemAsync(shipmentItemForm); await LoadShipmentItemsAsync(); CancelForms(); } private void EditShipmentItem(ShipmentItem item) { CancelForms(); shipmentItemId = item.Id; shipmentItemForm = new() { ShipmentId = item.ShipmentId, OrderItemId = item.OrderItemId, ProductPackagingId = item.ProductPackagingId, PalletId = item.PalletId, Quantity = item.Quantity }; showShipmentItemForm = true; } private async Task DeleteShipmentItemAsync(int id) { await Api.RemoveShipmentItemAsync(id); await LoadShipmentItemsAsync(); }
+}

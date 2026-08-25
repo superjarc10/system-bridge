@@ -1,0 +1,10 @@
+<div class="form-actions">
+    <button class="primary" @onclick="OnSave">@Label</button>
+    <button class="secondary" @onclick="OnCancel">Cancel</button>
+</div>
+
+@code {
+    [Parameter] public EventCallback OnSave { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public string Label { get; set; } = "Save";
+}
