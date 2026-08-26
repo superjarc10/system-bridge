@@ -1,0 +1,27 @@
+<section class="history-panel">
+    <div class="history-heading">
+        <strong>Change history</strong>
+        <button class="danger-button" @onclick="OnClear">Clear history</button>
+    </div>
+    @if (Entries.Count == 0)
+    {
+        <p class="history-empty">No changes recorded.</p>
+    }
+    else
+    {
+        <div class="history-list">
+            @foreach (var entry in Entries)
+            {
+                <div class="history-entry">
+                    <div><strong>@entry.FieldName</strong><small>@entry.ChangedAt.ToLocalTime().ToString("g")</small></div>
+                    <span>@entry.OldValue</span><span class="history-arrow">-&gt;</span><span>@entry.NewValue</span>
+                </div>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter] public IReadOnlyList<ChangeHistory> Entries { get; set; } = [];
+    [Parameter] public EventCallback OnClear { get; set; }
+}

@@ -32,6 +32,16 @@
             }
         </div>
     }
+    @foreach (var group in ItemGroups)
+    {
+        <section class="shipment-item-group">
+            <div class="shipment-item-group-heading"><strong>@group.ProductName</strong><span>Ordered @group.OrderedAmount.ToString("N0")</span></div>
+            @foreach (var item in group.Items)
+            {
+                <div class="shipment-item-group-row"><span>@item.ShipmentItem.Quantity.ToString("N0") @(item.ShipmentItem.PalletId.HasValue ? "pallets" : "packages")</span><span>Products @item.TotalProducts.ToString("N0")</span><span class="shipment-item-actions"><button class="link-button" @onclick="() => OnEdit.InvokeAsync(item.ShipmentItem)">Edit</button><button class="danger-button" @onclick="() => OnDelete.InvokeAsync(item.ShipmentItem.Id)">Delete</button></span></div>
+            }
+        </section>
+    }
 </section>
 
 @code {
@@ -41,6 +51,8 @@
     [Parameter] public IReadOnlyList<ProductPackaging> Packaging { get; set; } = [];
     [Parameter] public IReadOnlyList<Product> Products { get; set; } = [];
     [Parameter] public IReadOnlyList<Pallet> Pallets { get; set; } = [];
+    [Parameter] public EventCallback<ShipmentItem> OnEdit { get; set; }
+    [Parameter] public EventCallback<int> OnDelete { get; set; }
 
     private IReadOnlyList<ProductStat> Stats => ShipmentItems
         .Where(item => item.ShipmentId == ShipmentId)
@@ -52,7 +64,7 @@
             Pallet = item.PalletId.HasValue ? Pallets.FirstOrDefault(pallet => pallet.Id == item.PalletId.Value) : null
         })
         .Where(item => item.OrderItem is not null)
-        .GroupBy(item => item.OrderItem!.ProductId)
+        .GroupBy(item => item.Packaging?.ProductId ?? item.OrderItem!.ProductId)
         .Select(group =>
         {
             var required = group
@@ -72,9 +84,34 @@
         })
         .ToList();
 
+    private IReadOnlyList<ProductGroup> ItemGroups => ShipmentItems
+        .Where(item => item.ShipmentId == ShipmentId)
+        .Select(item => new
+        {
+            ShipmentItem = item,
+            OrderItem = OrderItems.FirstOrDefault(orderItem => orderItem.Id == item.OrderItemId),
+            Packaging = Packaging.FirstOrDefault(packaging => packaging.Id == item.ProductPackagingId),
+            Pallet = item.PalletId.HasValue ? Pallets.FirstOrDefault(pallet => pallet.Id == item.PalletId.Value) : null
+        })
+        .Where(item => item.OrderItem is not null)
+        .GroupBy(item => item.Packaging?.ProductId ?? item.OrderItem!.ProductId)
+        .Select(group => new ProductGroup(
+            Products.FirstOrDefault(product => product.Id == group.Key)?.Name ?? $"Product #{group.Key}",
+            group.Select(item => item.OrderItem!).DistinctBy(item => item.Id).Sum(item => item.Quantity),
+            group.Select(item => new ItemDetail(
+                item.ShipmentItem,
+                item.OrderItem!,
+                item.ShipmentItem.Quantity
+                    * (item.Pallet?.Quantity ?? 1)
+                    * (item.Packaging?.Pieces ?? 1))).ToList()))
+        .ToList();
+
     private sealed record ProductStat(string ProductName, int Required, int PackagedProducts, int PalletCount, int PackagingCount, int Remaining)
     {
         public bool IsEnough => Remaining >= 0;
         public int Surplus => Math.Max(Remaining, 0);
     }
+
+    private sealed record ProductGroup(string ProductName, int OrderedAmount, IReadOnlyList<ItemDetail> Items);
+    private sealed record ItemDetail(ShipmentItem ShipmentItem, OrderItem OrderItem, int TotalProducts);
 }

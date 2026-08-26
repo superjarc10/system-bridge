@@ -183,11 +183,17 @@ public class ManagementController(SystemBridgeDbContext db) : ControllerBase
         if (!await db.Customers.AnyAsync(customer => customer.Id == request.CustomerId)) return NotFound("Customer not found.");
         var order = await db.Orders.FindAsync(id);
         if (order is null) return NotFound();
+        var scheduledDate = ToUtc(request.ScheduledDate);
+        AddHistory("Order", id, "Order number", order.OrderNumber, NormalizeOrderNumber(request.OrderNumber));
+        AddHistory("Order", id, "Customer", order.CustomerId.ToString(), request.CustomerId.ToString());
+        AddHistory("Order", id, "Order date", FormatDate(order.ScheduledDate), FormatDate(scheduledDate));
+        AddHistory("Order", id, "Status", order.Status.ToString(), request.Status.ToString());
+        AddHistory("Order", id, "Notes", order.Notes, request.Notes);
         order.CustomerId = request.CustomerId;
         order.OrderNumber = NormalizeOrderNumber(request.OrderNumber);
         order.Status = request.Status;
         order.Notes = request.Notes;
-        order.ScheduledDate = ToUtc(request.ScheduledDate);
+        order.ScheduledDate = scheduledDate;
         order.Color = request.Color;
         if (request.CreatedAt.HasValue) order.CreatedAt = ToUtc(request.CreatedAt)!.Value;
         await db.SaveChangesAsync();
@@ -196,6 +202,12 @@ public class ManagementController(SystemBridgeDbContext db) : ControllerBase
 
     [HttpDelete("api/orders/{id:int}")]
     public Task<IActionResult> RemoveOrder(int id) => RemoveAsync(db.Orders, id);
+
+    [HttpGet("api/orders/{id:int}/history")]
+    public Task<List<ChangeHistory>> GetOrderHistory(int id) => GetHistoryAsync("Order", id);
+
+    [HttpDelete("api/orders/{id:int}/history")]
+    public Task<IActionResult> ClearOrderHistory(int id) => ClearHistoryAsync("Order", id);
 
     [HttpPost("api/order-items")]
     public async Task<ActionResult<OrderItem>> AddOrderItem(OrderItemRequest request)
@@ -235,17 +247,25 @@ public class ManagementController(SystemBridgeDbContext db) : ControllerBase
     public async Task<ActionResult<Shipment>> AddShipment(ShipmentRequest request)
     {
         if (!await db.Customers.AnyAsync(customer => customer.Id == request.CustomerId)) return NotFound("Customer not found.");
-        var shipment = new Shipment { ShipmentNumber = NormalizeShipmentNumber(request.ShipmentNumber), CustomerId = request.CustomerId, CreatedAt = ToUtc(request.CreatedAt) ?? DateTime.UtcNow, ScheduledDate = ToUtc(request.ScheduledDate), ShippedAt = ToUtc(request.ShippedAt), Color = request.Color, Status = request.Status };
+        var shipment = new Shipment { ShipmentNumber = NormalizeShipmentNumber(request.ShipmentNumber), CustomerId = request.CustomerId, CreatedAt = ToUtc(request.CreatedAt) ?? DateTime.UtcNow, ScheduledDate = ToUtc(request.ScheduledDate), ShippedAt = ToUtc(request.ShippedAt), Color = request.Color, Status = request.Status, TruckDeliveryConfirmed = request.TruckDeliveryConfirmed };
         db.Shipments.Add(shipment);
         await db.SaveChangesAsync();
         return Created($"api/shipments/{shipment.Id}", shipment);
     }
 
     [HttpGet("api/shipments")]
-    public Task<List<Shipment>> GetShipments() => db.Shipments.AsNoTracking().ToListAsync();
+    public async Task<List<Shipment>> GetShipments()
+    {
+        await PostponeOverdueShipmentsAsync();
+        return await db.Shipments.AsNoTracking().ToListAsync();
+    }
 
     [HttpGet("api/shipments/{id:int}")]
-    public Task<Shipment?> GetShipment(int id) => db.Shipments.AsNoTracking().FirstOrDefaultAsync(shipment => shipment.Id == id);
+    public async Task<Shipment?> GetShipment(int id)
+    {
+        await PostponeOverdueShipmentsAsync();
+        return await db.Shipments.AsNoTracking().FirstOrDefaultAsync(shipment => shipment.Id == id);
+    }
 
     [HttpPut("api/shipments/{id:int}")]
     public async Task<IActionResult> UpdateShipment(int id, ShipmentRequest request)
@@ -253,12 +273,20 @@ public class ManagementController(SystemBridgeDbContext db) : ControllerBase
         if (!await db.Customers.AnyAsync(customer => customer.Id == request.CustomerId)) return NotFound("Customer not found.");
         var shipment = await db.Shipments.FindAsync(id);
         if (shipment is null) return NotFound();
+        var shipmentDate = ToUtc(request.ScheduledDate);
+        var shipmentNumber = NormalizeShipmentNumber(request.ShipmentNumber);
+        AddHistory("Shipment", id, "Shipment number", shipment.ShipmentNumber, shipmentNumber);
+        AddHistory("Shipment", id, "Customer", shipment.CustomerId.ToString(), request.CustomerId.ToString());
+        AddHistory("Shipment", id, "Shipment date", FormatDate(shipment.ScheduledDate), FormatDate(shipmentDate));
+        AddHistory("Shipment", id, "Status", shipment.Status.ToString(), request.Status.ToString());
+        AddHistory("Shipment", id, "Truck delivery", FormatBool(shipment.TruckDeliveryConfirmed), FormatBool(request.TruckDeliveryConfirmed));
         shipment.CustomerId = request.CustomerId;
-        shipment.ShipmentNumber = NormalizeShipmentNumber(request.ShipmentNumber);
-        shipment.ScheduledDate = ToUtc(request.ScheduledDate);
+        shipment.ShipmentNumber = shipmentNumber;
+        shipment.ScheduledDate = shipmentDate;
         shipment.ShippedAt = ToUtc(request.ShippedAt);
         shipment.Color = request.Color;
         shipment.Status = request.Status;
+        shipment.TruckDeliveryConfirmed = request.TruckDeliveryConfirmed;
         if (request.CreatedAt.HasValue) shipment.CreatedAt = ToUtc(request.CreatedAt)!.Value;
         await db.SaveChangesAsync();
         return Ok(shipment);
@@ -266,6 +294,12 @@ public class ManagementController(SystemBridgeDbContext db) : ControllerBase
 
     [HttpDelete("api/shipments/{id:int}")]
     public Task<IActionResult> RemoveShipment(int id) => RemoveAsync(db.Shipments, id);
+
+    [HttpGet("api/shipments/{id:int}/history")]
+    public Task<List<ChangeHistory>> GetShipmentHistory(int id) => GetHistoryAsync("Shipment", id);
+
+    [HttpDelete("api/shipments/{id:int}/history")]
+    public Task<IActionResult> ClearShipmentHistory(int id) => ClearHistoryAsync("Shipment", id);
 
     [HttpPost("api/shipment-items")]
     public async Task<ActionResult<ShipmentItem>> AddShipmentItem(ShipmentItemRequest request)
@@ -353,4 +387,54 @@ public class ManagementController(SystemBridgeDbContext db) : ControllerBase
     private static DateTime? ToUtc(DateTime? value) => value.HasValue
         ? DateTime.SpecifyKind(value.Value.Date, DateTimeKind.Utc)
         : null;
+
+    private void AddHistory(string entityType, int entityId, string fieldName, string? oldValue, string? newValue)
+    {
+        if (oldValue == newValue) return;
+        db.ChangeHistory.Add(new ChangeHistory
+        {
+            EntityType = entityType,
+            EntityId = entityId,
+            FieldName = fieldName,
+            OldValue = oldValue ?? "Not set",
+            NewValue = newValue ?? "Not set"
+        });
+    }
+
+    private Task<List<ChangeHistory>> GetHistoryAsync(string entityType, int entityId) => db.ChangeHistory
+        .AsNoTracking()
+        .Where(change => change.EntityType == entityType && change.EntityId == entityId)
+        .OrderByDescending(change => change.ChangedAt)
+        .ToListAsync();
+
+    private async Task<IActionResult> ClearHistoryAsync(string entityType, int entityId)
+    {
+        await db.ChangeHistory
+            .Where(change => change.EntityType == entityType && change.EntityId == entityId)
+            .ExecuteDeleteAsync();
+        return NoContent();
+    }
+
+    private async Task PostponeOverdueShipmentsAsync()
+    {
+        var today = DateTime.UtcNow.Date;
+        var shipments = await db.Shipments
+            .Where(shipment => shipment.ScheduledDate.HasValue
+                && shipment.ScheduledDate.Value.Date < today
+                && shipment.Status != ShipmentStatus.Shipped
+                && shipment.Status != ShipmentStatus.Cancelled)
+            .ToListAsync();
+
+        foreach (var shipment in shipments)
+        {
+            var oldDate = shipment.ScheduledDate;
+            shipment.ScheduledDate = DateTime.SpecifyKind(oldDate!.Value.Date.AddDays(1), DateTimeKind.Utc);
+            AddHistory("Shipment", shipment.Id, "Shipment date", FormatDate(oldDate), FormatDate(shipment.ScheduledDate));
+        }
+
+        if (shipments.Count > 0) await db.SaveChangesAsync();
+    }
+
+    private static string FormatDate(DateTime? value) => value?.ToString("yyyy-MM-dd") ?? "Not set";
+    private static string FormatBool(bool value) => value ? "Confirmed" : "Not confirmed";
 }

@@ -61,6 +61,7 @@ public sealed class ShipmentRequest
     public DateTime? ScheduledDate { get; set; }
     public string Color { get; set; } = "#D9EAD3";
     public ShipmentStatus Status { get; set; } = ShipmentStatus.Planned;
+    public bool TruckDeliveryConfirmed { get; set; }
 }
 
 public sealed class ShipmentItemRequest

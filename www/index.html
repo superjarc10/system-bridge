@@ -53,6 +53,135 @@
     const authBase = 'http://localhost:5000/api/auth';
     let jwtToken = '';
 
+    const OrderStatus = Object.freeze({
+      NotStarted: 'NotStarted',
+      Planned: 'Planned',
+      Manufacturing: 'Manufacturing',
+      Completed: 'Completed',
+      Shipped: 'Shipped',
+      Cancelled: 'Cancelled'
+    });
+
+    const ShipmentStatus = Object.freeze({
+      Planned: 'Planned',
+      Packing: 'Packing',
+      Ready: 'Ready',
+      Shipped: 'Shipped',
+      Cancelled: 'Cancelled'
+    });
+
+    class InventoryItem {
+      constructor(json) {
+        this.id = json.id;
+        this.productSku = json.productSku;
+        this.quantityOnHand = json.quantityOnHand;
+        this.updatedAt = parseDate(json.updatedAt, 'inventory.updatedAt');
+      }
+    }
+
+    function parseDate(value, fieldName) {
+      const date = new Date(value);
+      if (!value || Number.isNaN(date.getTime())) {
+        throw new Error(`Invalid ${fieldName} value`);
+      }
+      return date;
+    }
+
+    function parseStatus(value, allowedValues, fieldName) {
+      if (!allowedValues.includes(value)) {
+        throw new Error(`Invalid ${fieldName} value: ${value}`);
+      }
+      return value;
+    }
+
+    class Customer {
+      constructor(json) {
+        this.id = json.id;
+        this.name = json.name;
+        this.country = json.country;
+        this.orders = (json.orders ?? []).map(order => new Order(order));
+        this.shipments = (json.shipments ?? []).map(shipment => new Shipment(shipment));
+      }
+    }
+
+    class Product {
+      constructor(json) {
+        this.id = json.id;
+        this.name = json.name;
+        this.description = json.description;
+        this.code = json.code;
+        this.pricePer1000 = json.pricePer1000;
+        this.manufacturingCapacityPerHour = json.manufacturingCapacityPerHour;
+        this.weightPer1000 = json.weightPer1000;
+        this.packagingOptions = (json.packagingOptions ?? []).map(packaging => new ProductPackaging(packaging));
+        this.orderItems = (json.orderItems ?? []).map(item => new OrderItem(item));
+      }
+    }
+
+    class ProductPackaging {
+      constructor(json) {
+        this.id = json.id;
+        this.productId = json.productId;
+        this.type = json.type;
+        this.pieces = json.pieces;
+        this.product = json.product ? new Product(json.product) : null;
+        this.shipmentItems = (json.shipmentItems ?? []).map(item => new ShipmentItem(item));
+      }
+    }
+
+    class Order {
+      constructor(json) {
+        this.id = json.id;
+        this.customerId = json.customerId;
+        this.createdAt = parseDate(json.createdAt, 'order.createdAt');
+        this.status = parseStatus(json.status, Object.values(OrderStatus), 'order.status');
+        this.notes = json.notes ?? '';
+        this.customer = json.customer ? new Customer(json.customer) : null;
+        this.orderItems = (json.orderItems ?? []).map(item => new OrderItem(item));
+      }
+    }
+
+    class OrderItem {
+      constructor(json) {
+        this.id = json.id;
+        this.orderId = json.orderId;
+        this.productId = json.productId;
+        this.quantity = json.quantity;
+        this.order = json.order ? new Order(json.order) : null;
+        this.product = json.product ? new Product(json.product) : null;
+        this.shipmentItems = (json.shipmentItems ?? []).map(item => new ShipmentItem(item));
+      }
+    }
+
+    class Shipment {
+      constructor(json) {
+        this.id = json.id;
+        this.customerId = json.customerId;
+        this.createdAt = parseDate(json.createdAt, 'shipment.createdAt');
+        this.shippedAt = json.shippedAt ? parseDate(json.shippedAt, 'shipment.shippedAt') : null;
+        this.status = parseStatus(json.status, Object.values(ShipmentStatus), 'shipment.status');
+        this.customer = json.customer ? new Customer(json.customer) : null;
+        this.shipmentItems = (json.shipmentItems ?? []).map(item => new ShipmentItem(item));
+      }
+    }
+
+    class ShipmentItem {
+      constructor(json) {
+        this.id = json.id;
+        this.shipmentId = json.shipmentId;
+        this.orderItemId = json.orderItemId;
+        this.productPackagingId = json.productPackagingId;
+        this.quantity = json.quantity;
+        this.shipment = json.shipment ? new Shipment(json.shipment) : null;
+        this.orderItem = json.orderItem ? new OrderItem(json.orderItem) : null;
+        this.productPackaging = json.productPackaging ? new ProductPackaging(json.productPackaging) : null;
+      }
+    }
+
+    function parseModels(json, Model) {
+      return Array.isArray(json) ? json.map(item => new Model(item)) : new Model(json);
+    }
+
     function getHeaders() {
       return {
         'Content-Type': 'application/json',
@@ -122,7 +251,7 @@
         const response = await fetch(`${apiBase}/inventory`, {
           headers: getHeaders()
         });
-        const data = await response.json();
+        const data = parseModels(await response.json(), InventoryItem);
 
         if (!Array.isArray(data) || data.length === 0) {
           inventoryList.innerHTML = '<p>No inventory found.</p>';

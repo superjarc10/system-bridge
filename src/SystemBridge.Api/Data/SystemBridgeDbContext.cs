@@ -18,6 +18,7 @@ public class SystemBridgeDbContext : DbContext
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
     public DbSet<Shipment> Shipments => Set<Shipment>();
     public DbSet<ShipmentItem> ShipmentItems => Set<ShipmentItem>();
+    public DbSet<ChangeHistory> ChangeHistory => Set<ChangeHistory>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

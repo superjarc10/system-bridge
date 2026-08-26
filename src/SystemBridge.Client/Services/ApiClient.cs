@@ -65,6 +65,8 @@ public sealed class ApiClient(HttpClient httpClient)
     public Task<bool> RemoveOrderAsync(int id) => SendDeleteAsync($"api/orders/{id}");
     public Task<List<Order>> GetOrdersAsync() => GetManyAsync<Order>("api/orders");
     public Task<Order?> GetOrderAsync(int id) => GetOneAsync<Order>($"api/orders/{id}");
+    public Task<List<ChangeHistory>> GetOrderHistoryAsync(int id) => GetManyAsync<ChangeHistory>($"api/orders/{id}/history");
+    public Task<bool> ClearOrderHistoryAsync(int id) => SendDeleteAsync($"api/orders/{id}/history");
 
     public Task<OrderItem?> AddOrderItemAsync(OrderItemRequest item) => SendJsonAsync<OrderItemRequest, OrderItem>(HttpMethod.Post, "api/order-items", item);
     public Task<OrderItem?> UpdateOrderItemAsync(int id, OrderItemRequest item) => SendJsonAsync<OrderItemRequest, OrderItem>(HttpMethod.Put, $"api/order-items/{id}", item);
@@ -77,6 +79,8 @@ public sealed class ApiClient(HttpClient httpClient)
     public Task<bool> RemoveShipmentAsync(int id) => SendDeleteAsync($"api/shipments/{id}");
     public Task<List<Shipment>> GetShipmentsAsync() => GetManyAsync<Shipment>("api/shipments");
     public Task<Shipment?> GetShipmentAsync(int id) => GetOneAsync<Shipment>($"api/shipments/{id}");
+    public Task<List<ChangeHistory>> GetShipmentHistoryAsync(int id) => GetManyAsync<ChangeHistory>($"api/shipments/{id}/history");
+    public Task<bool> ClearShipmentHistoryAsync(int id) => SendDeleteAsync($"api/shipments/{id}/history");
 
     public Task<ShipmentItem?> AddShipmentItemAsync(ShipmentItemRequest item) => SendJsonAsync<ShipmentItemRequest, ShipmentItem>(HttpMethod.Post, "api/shipment-items", item);
     public Task<ShipmentItem?> UpdateShipmentItemAsync(int id, ShipmentItemRequest item) => SendJsonAsync<ShipmentItemRequest, ShipmentItem>(HttpMethod.Put, $"api/shipment-items/{id}", item);

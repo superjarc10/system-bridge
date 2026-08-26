@@ -1,0 +1,107 @@
+@page "/calendar"
+@implements IAsyncDisposable
+@inject ApiClient Api
+@inject IJSRuntime JS
+
+<PageTitle>SystemBridge Calendar</PageTitle>
+
+<div class="page-toolbar"><strong>Calendar</strong><button class="secondary" @onclick="LoadEventsAsync" disabled="@(!Api.IsAuthenticated)">Refresh</button></div>
+
+@if (!Api.IsAuthenticated)
+{
+    <section class="panel login-card"><div class="panel-heading"><span class="panel-kicker">ACCESS</span><h2>Sign in from Management first</h2></div><p class="muted">The calendar uses the same authenticated management session.</p><NavLink class="primary calendar-link" href="">Open Management</NavLink></section>
+}
+else
+{
+    <div class="calendar-filters" role="group" aria-label="Calendar filters">
+        <button class="@(eventFilter == "All" ? "filter-active" : "")" @onclick="ShowAllEvents">Show all</button>
+        <button class="@(eventFilter == "Orders" ? "filter-active" : "")" @onclick="ShowOrderEvents">Show orders</button>
+        <button class="@(eventFilter == "Shipments" ? "filter-active" : "")" @onclick="ShowShipmentEvents">Show shipments</button>
+    </div>
+    <div class="calendar-workspace">
+        <section class="calendar-panel"><div id="systembridge-calendar" @ref="calendarElement"></div></section>
+        @if (selectedEvent is not null)
+        {
+            <section class="calendar-event-details">
+            <div class="event-detail-heading"><div><span class="panel-kicker">@selectedEvent.Type</span><h2>@selectedEvent.CustomerName</h2></div><div><button class="secondary" @onclick="ToggleEdit">@(editing ? "Cancel edit" : "Edit")</button><button class="secondary" @onclick="CloseEventDetails">Close</button></div></div>
+            @if (editing)
+            {
+                @if (selectedEvent.Type == "Order")
+                {
+                    <div class="calendar-edit-form"><div class="form-grid"><label>Order number <input @bind="orderEdit.OrderNumber" /></label><label>Order date <input type="date" @bind-value="orderEdit.ScheduledDate" @bind-value:format="yyyy-MM-dd" /></label><label>Status <select @bind="orderEdit.Status">@foreach (var status in Enum.GetValues<OrderStatus>()) { <option value="@status">@status</option> }</select></label><label>Notes <input @bind="orderEdit.Notes" /></label><label>Color <LightColorPicker @bind-Value="orderEdit.Color" /></label></div><button class="primary" @onclick="SaveOrderEditAsync">Save order</button></div>
+                }
+                else
+                {
+                    <div class="calendar-edit-form"><div class="form-grid"><label>Shipment number <input @bind="shipmentEdit.ShipmentNumber" /></label><label>Shipment date <input type="date" @bind-value="shipmentEdit.ScheduledDate" @bind-value:format="yyyy-MM-dd" /></label><label>Status <select @bind="shipmentEdit.Status">@foreach (var status in Enum.GetValues<ShipmentStatus>()) { <option value="@status">@status</option> }</select></label><label>Color <LightColorPicker @bind-Value="shipmentEdit.Color" /></label><label class="toggle-field"><input type="checkbox" @bind="shipmentEdit.TruckDeliveryConfirmed" /> Truck delivery confirmed</label></div><button class="primary" @onclick="SaveShipmentEditAsync">Save shipment</button></div>
+                }
+            }
+            else
+            {
+                <div class="event-detail-grid"><span><small>Number</small>@selectedEvent.Number</span><span><small>Scheduled date</small>@selectedEvent.Date</span><span><small>Status</small>@selectedEvent.Status</span>@if (selectedEvent.Type == "Shipment") { <span><small>Truck delivery</small>@selectedEvent.TruckStatus</span> }</div><div class="event-products"><small>Products and quantities</small><div class="event-product-list">@foreach (var product in selectedEvent.Products) { <div class="event-product-row"><span>@product.Name</span><strong>@product.Quantity</strong></div> }</div></div>@if (!string.IsNullOrWhiteSpace(selectedEvent.Notes)) { <div class="event-products"><small>Notes</small><p>@selectedEvent.Notes</p></div> }
+            }
+            </section>
+        }
+    </div>
+}
+
+@code {
+    private ElementReference calendarElement;
+    private bool initialized;
+    private string eventFilter = "All";
+    private string selectedEventId = string.Empty;
+    private bool editing;
+    private CalendarEventDetails? selectedEvent;
+    private List<Order> orders = [];
+    private List<Shipment> shipments = [];
+    private OrderRequest orderEdit = new();
+    private ShipmentRequest shipmentEdit = new();
+    private Dictionary<int, string> ApiCustomerNames { get; } = [];
+    private Dictionary<string, CalendarEventDetails> EventDetails { get; } = [];
+
+    protected override void OnInitialized() => DotNetReference = DotNetObjectReference.Create(this);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Api.IsAuthenticated && (!initialized || firstRender)) await LoadEventsAsync();
+    }
+
+    private async Task LoadEventsAsync()
+    {
+        if (!Api.IsAuthenticated) return;
+        orders = await Api.GetOrdersAsync(); shipments = await Api.GetShipmentsAsync();
+        var products = await Api.GetProductsAsync(); var orderItems = await Api.GetOrderItemsAsync(); var shipmentItems = await Api.GetShipmentItemsAsync();
+        ApiCustomerNames.Clear(); foreach (var customer in await Api.GetCustomersAsync()) ApiCustomerNames[customer.Id] = customer.Name;
+        EventDetails.Clear();
+        var events = (eventFilter is "All" or "Orders" ? orders.Where(order => order.ScheduledDate.HasValue).Select(order => new CalendarEvent($"order-{order.Id}", "ORD", CustomerName(order.CustomerId), order.ScheduledDate!.Value.ToString("yyyy-MM-dd"), order.Color, ["calendar-order"])) : [])
+            .Concat(eventFilter is "All" or "Shipments" ? shipments.Where(shipment => shipment.ScheduledDate.HasValue).Select(shipment => new CalendarEvent($"shipment-{shipment.Id}", "SHP", CustomerName(shipment.CustomerId), shipment.ScheduledDate!.Value.ToString("yyyy-MM-dd"), shipment.Color, ["calendar-shipment", shipment.TruckDeliveryConfirmed ? "truck-confirmed-event" : "truck-pending-event"])) : []).ToList();
+        foreach (var order in orders.Where(order => order.ScheduledDate.HasValue)) EventDetails[$"order-{order.Id}"] = new("Order", CustomerName(order.CustomerId), DisplayOrder(order), order.ScheduledDate!.Value.ToString("d"), order.Status.ToString(), OrderProducts(order.Id, orderItems, products), order.Notes, string.Empty);
+        foreach (var shipment in shipments.Where(shipment => shipment.ScheduledDate.HasValue)) EventDetails[$"shipment-{shipment.Id}"] = new("Shipment", CustomerName(shipment.CustomerId), DisplayShipment(shipment), shipment.ScheduledDate!.Value.ToString("d"), shipment.Status.ToString(), ShipmentProducts(shipment.Id, shipmentItems, orderItems, products), string.Empty, shipment.TruckDeliveryConfirmed ? "Confirmed" : "Not confirmed");
+        if (!initialized) { initialized = true; await InvokeAsync(StateHasChanged); }
+        await JS.InvokeVoidAsync("systemBridgeCalendar.init", calendarElement, events, DotNetReference);
+    }
+
+    [JSInvokable] public void ShowEventDetails(string eventId) { selectedEventId = eventId; EventDetails.TryGetValue(eventId, out selectedEvent); editing = false; StateHasChanged(); }
+    private async Task ShowAllEvents() { eventFilter = "All"; await LoadEventsAsync(); }
+    private async Task ShowOrderEvents() { eventFilter = "Orders"; await LoadEventsAsync(); }
+    private async Task ShowShipmentEvents() { eventFilter = "Shipments"; await LoadEventsAsync(); }
+    private void CloseEventDetails() { selectedEvent = null; editing = false; }
+    private void ToggleEdit()
+    {
+        editing = !editing; if (!editing || selectedEvent is null) return;
+        if (selectedEvent.Type == "Order" && orders.FirstOrDefault(order => $"order-{order.Id}" == selectedEventId) is { } order) orderEdit = new() { OrderNumber = order.OrderNumber, CustomerId = order.CustomerId, ScheduledDate = order.ScheduledDate, Color = order.Color, Status = order.Status, Notes = order.Notes };
+        if (selectedEvent.Type == "Shipment" && shipments.FirstOrDefault(shipment => $"shipment-{shipment.Id}" == selectedEventId) is { } shipment) shipmentEdit = new() { ShipmentNumber = shipment.ShipmentNumber, CustomerId = shipment.CustomerId, ScheduledDate = shipment.ScheduledDate, Color = shipment.Color, Status = shipment.Status, TruckDeliveryConfirmed = shipment.TruckDeliveryConfirmed };
+    }
+    private async Task SaveOrderEditAsync() { await Api.UpdateOrderAsync(int.Parse(selectedEventId.Split('-')[1]), orderEdit); editing = false; await LoadEventsAsync(); EventDetails.TryGetValue(selectedEventId, out selectedEvent); }
+    private async Task SaveShipmentEditAsync() { await Api.UpdateShipmentAsync(int.Parse(selectedEventId.Split('-')[1]), shipmentEdit); editing = false; await LoadEventsAsync(); EventDetails.TryGetValue(selectedEventId, out selectedEvent); }
+    private string CustomerName(int id) => ApiCustomerNames.TryGetValue(id, out var name) ? name : $"Customer #{id}";
+    private string DisplayOrder(Order order) => string.IsNullOrWhiteSpace(order.OrderNumber) ? $"#{order.Id}" : order.OrderNumber;
+    private string DisplayShipment(Shipment shipment) => string.IsNullOrWhiteSpace(shipment.ShipmentNumber) ? $"#{shipment.Id}" : shipment.ShipmentNumber;
+    private List<ProductQuantity> OrderProducts(int id, IReadOnlyList<OrderItem> items, IReadOnlyList<Product> products) => items.Where(item => item.OrderId == id).Select(item => new ProductQuantity(ProductName(item.ProductId, products), $"{item.Quantity:N0} units")).ToList();
+    private List<ProductQuantity> ShipmentProducts(int id, IReadOnlyList<ShipmentItem> items, IReadOnlyList<OrderItem> orderItems, IReadOnlyList<Product> products) => items.Where(item => item.ShipmentId == id).Select(item => new ProductQuantity(ProductName(orderItems.FirstOrDefault(orderItem => orderItem.Id == item.OrderItemId)?.ProductId ?? 0, products), $"{item.Quantity:N0} {(item.PalletId.HasValue ? (item.Quantity == 1 ? "pallet" : "pallets") : (item.Quantity == 1 ? "package" : "packages"))}")).ToList();
+    private static string ProductName(int id, IReadOnlyList<Product> products) => products.FirstOrDefault(product => product.Id == id)?.Name ?? $"Product #{id}";
+    private DotNetObjectReference<Calendar>? DotNetReference { get; set; }
+    public async ValueTask DisposeAsync() { if (initialized) await JS.InvokeVoidAsync("systemBridgeCalendar.dispose", calendarElement); DotNetReference?.Dispose(); }
+    private sealed record CalendarEvent(string Id, string Prefix, string Customer, string Start, string BackgroundColor, string[] ClassNames);
+    private sealed record CalendarEventDetails(string Type, string CustomerName, string Number, string Date, string Status, IReadOnlyList<ProductQuantity> Products, string Notes, string TruckStatus);
+    private sealed record ProductQuantity(string Name, string Quantity);
+}
