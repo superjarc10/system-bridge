@@ -7,7 +7,7 @@ public class Order
     public int CustomerId { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? ScheduledDate { get; set; }
-    public string Color { get; set; } = "#D9EAD3";
+    public string Color { get; set; } = "#b0b0b0";
     public OrderStatus Status { get; set; } = OrderStatus.NotStarted;
     public string Notes { get; set; } = string.Empty;
 

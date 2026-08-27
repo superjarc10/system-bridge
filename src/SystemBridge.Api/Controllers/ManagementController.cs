@@ -165,7 +165,7 @@ public class ManagementController(SystemBridgeDbContext db) : ControllerBase
     public async Task<ActionResult<Order>> AddOrder(OrderRequest request)
     {
         if (!await db.Customers.AnyAsync(customer => customer.Id == request.CustomerId)) return NotFound("Customer not found.");
-        var order = new Order { OrderNumber = NormalizeOrderNumber(request.OrderNumber), CustomerId = request.CustomerId, CreatedAt = ToUtc(request.CreatedAt) ?? DateTime.UtcNow, ScheduledDate = ToUtc(request.ScheduledDate), Color = request.Color, Status = request.Status, Notes = request.Notes };
+        var order = new Order { OrderNumber = NormalizeOrderNumber(request.OrderNumber), CustomerId = request.CustomerId, CreatedAt = ToUtc(request.CreatedAt) ?? DateTime.UtcNow, ScheduledDate = ToUtc(request.ScheduledDate), Color = "#b0b0b0", Status = request.Status, Notes = request.Notes };
         db.Orders.Add(order);
         await db.SaveChangesAsync();
         return Created($"api/orders/{order.Id}", order);
@@ -194,7 +194,7 @@ public class ManagementController(SystemBridgeDbContext db) : ControllerBase
         order.Status = request.Status;
         order.Notes = request.Notes;
         order.ScheduledDate = scheduledDate;
-        order.Color = request.Color;
+        order.Color = "#b0b0b0";
         if (request.CreatedAt.HasValue) order.CreatedAt = ToUtc(request.CreatedAt)!.Value;
         await db.SaveChangesAsync();
         return Ok(order);
@@ -247,7 +247,8 @@ public class ManagementController(SystemBridgeDbContext db) : ControllerBase
     public async Task<ActionResult<Shipment>> AddShipment(ShipmentRequest request)
     {
         if (!await db.Customers.AnyAsync(customer => customer.Id == request.CustomerId)) return NotFound("Customer not found.");
-        var shipment = new Shipment { ShipmentNumber = NormalizeShipmentNumber(request.ShipmentNumber), CustomerId = request.CustomerId, CreatedAt = ToUtc(request.CreatedAt) ?? DateTime.UtcNow, ScheduledDate = ToUtc(request.ScheduledDate), ShippedAt = ToUtc(request.ShippedAt), Color = request.Color, Status = request.Status, TruckDeliveryConfirmed = request.TruckDeliveryConfirmed };
+        var color = request.Type == ShipmentType.IN ? "#ef5350" : "#4caf50";
+        var shipment = new Shipment { ShipmentNumber = NormalizeShipmentNumber(request.ShipmentNumber), CustomerId = request.CustomerId, CreatedAt = ToUtc(request.CreatedAt) ?? DateTime.UtcNow, ScheduledDate = ToUtc(request.ScheduledDate), ShippedAt = ToUtc(request.ShippedAt), Type = request.Type, Color = color, Status = request.Status, TruckDeliveryConfirmed = request.TruckDeliveryConfirmed };
         db.Shipments.Add(shipment);
         await db.SaveChangesAsync();
         return Created($"api/shipments/{shipment.Id}", shipment);
@@ -278,13 +279,15 @@ public class ManagementController(SystemBridgeDbContext db) : ControllerBase
         AddHistory("Shipment", id, "Shipment number", shipment.ShipmentNumber, shipmentNumber);
         AddHistory("Shipment", id, "Customer", shipment.CustomerId.ToString(), request.CustomerId.ToString());
         AddHistory("Shipment", id, "Shipment date", FormatDate(shipment.ScheduledDate), FormatDate(shipmentDate));
+        AddHistory("Shipment", id, "Type", shipment.Type.ToString(), request.Type.ToString());
         AddHistory("Shipment", id, "Status", shipment.Status.ToString(), request.Status.ToString());
         AddHistory("Shipment", id, "Truck delivery", FormatBool(shipment.TruckDeliveryConfirmed), FormatBool(request.TruckDeliveryConfirmed));
         shipment.CustomerId = request.CustomerId;
         shipment.ShipmentNumber = shipmentNumber;
         shipment.ScheduledDate = shipmentDate;
         shipment.ShippedAt = ToUtc(request.ShippedAt);
-        shipment.Color = request.Color;
+        shipment.Type = request.Type;
+        shipment.Color = request.Type == ShipmentType.IN ? "#ef5350" : "#4caf50";
         shipment.Status = request.Status;
         shipment.TruckDeliveryConfirmed = request.TruckDeliveryConfirmed;
         if (request.CreatedAt.HasValue) shipment.CreatedAt = ToUtc(request.CreatedAt)!.Value;

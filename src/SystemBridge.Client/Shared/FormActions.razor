@@ -1,6 +1,8 @@
+@inject LocalizationService L
+
 <div class="form-actions">
     <button class="primary" @onclick="OnSave">@Label</button>
-    <button class="secondary" @onclick="OnCancel">Cancel</button>
+    <button class="secondary" @onclick="OnCancel">@L["Cancel"]</button>
 </div>
 
 @code {

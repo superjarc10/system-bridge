@@ -1,11 +1,13 @@
+@inject LocalizationService L
+
 <section class="history-panel">
     <div class="history-heading">
-        <strong>Change history</strong>
-        <button class="danger-button" @onclick="OnClear">Clear history</button>
+        <strong>@L["ChangeHistory"]</strong>
+        <button class="danger-button" @onclick="OnClear">@L["ClearHistory"]</button>
     </div>
     @if (Entries.Count == 0)
     {
-        <p class="history-empty">No changes recorded.</p>
+        <p class="history-empty">@L["NoChangesRecorded"]</p>
     }
     else
     {
@@ -13,8 +15,8 @@
             @foreach (var entry in Entries)
             {
                 <div class="history-entry">
-                    <div><strong>@entry.FieldName</strong><small>@entry.ChangedAt.ToLocalTime().ToString("g")</small></div>
-                    <span>@entry.OldValue</span><span class="history-arrow">-&gt;</span><span>@entry.NewValue</span>
+                    <div><strong>@L[entry.FieldName]</strong><small>@entry.ChangedAt.ToLocalTime().ToString("g")</small></div>
+                    <span>@L[entry.OldValue]</span><span class="history-arrow">-&gt;</span><span>@L[entry.NewValue]</span>
                 </div>
             }
         </div>

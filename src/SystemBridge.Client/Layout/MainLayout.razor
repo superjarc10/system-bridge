@@ -1,4 +1,7 @@
 ﻿@inherits LayoutComponentBase
+@inject LocalizationService L
+@implements IDisposable
+
 <div class="page">
     <div class="sidebar">
         <NavMenu />
@@ -7,10 +10,19 @@
     <main>
         <div class="top-row px-4">
             <div class="top-navigation">
-                <NavLink href="" Match="NavLinkMatch.All">Management</NavLink>
-                <NavLink href="calendar">Calendar</NavLink>
+                <NavLink href="" Match="NavLinkMatch.All">@L["Management"]</NavLink>
+                <NavLink href="calendar">@L["Calendar"]</NavLink>
+                <NavLink href="progress">@L["ProgressTracking"]</NavLink>
             </div>
-            <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
+            <div class="top-actions">
+                <select class="language-select" value="@L.CurrentCulture" @onchange="OnLanguageSelect">
+                    @foreach (var lang in L.SupportedLanguages)
+                    {
+                        <option value="@lang.Code">@lang.Name</option>
+                    }
+                </select>
+                <a href="https://learn.microsoft.com/aspnet/core/" target="_blank">About</a>
+            </div>
         </div>
 
         <article class="content px-4">
@@ -18,3 +30,26 @@
         </article>
     </main>
 </div>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        L.OnLanguageChanged += OnLanguageChanged;
+        await L.InitializeAsync();
+    }
+
+    private async Task OnLanguageSelect(ChangeEventArgs e)
+    {
+        if (e.Value?.ToString() is { } culture)
+        {
+            await L.SetCultureAsync(culture);
+        }
+    }
+
+    private void OnLanguageChanged() => StateHasChanged();
+
+    public void Dispose()
+    {
+        L.OnLanguageChanged -= OnLanguageChanged;
+    }
+}

@@ -1,0 +1,559 @@
+@page "/progress"
+@using System.Text.Json
+@inject ApiClient Api
+@inject IJSRuntime JS
+@inject LocalizationService L
+@implements IDisposable
+
+<PageTitle>SystemBridge @L["ProgressTracking"]</PageTitle>
+
+<div class="page-toolbar">
+    <strong>@L["ProgressTracking"]</strong>
+    <div class="toolbar-actions">
+        <button class="primary" @onclick="ToggleAddForm" disabled="@(!Api.IsAuthenticated)">
+            @(showAddForm ? L["CloseForm"] : L["AddOrderTracker"])
+        </button>
+        <button class="secondary" @onclick="LoadDataAsync" disabled="@(!Api.IsAuthenticated)">@L["Refresh"]</button>
+    </div>
+</div>
+
+@if (!Api.IsAuthenticated)
+{
+    <section class="panel login-card">
+        <div class="panel-heading"><span class="panel-kicker">@L["Access"]</span><h2>@L["SignInFromManagement"]</h2></div>
+        <p class="muted">@L["ProgressAuthNotice"]</p>
+        <NavLink class="primary calendar-link" href="">@L["OpenManagement"]</NavLink>
+    </section>
+}
+else
+{
+    @if (showAddForm)
+    {
+        <section class="panel entry-form progress-add-form">
+            <div class="panel-heading">
+                <span class="panel-kicker">@L["NewTracker"]</span>
+                <h2>@L["TrackOrderProgress"]</h2>
+            </div>
+            <div class="form-grid">
+                <label>
+                    @L["SelectOrder"]
+                    <select value="@formOrderId" @onchange="OnOrderSelectChanged">
+                        @if (formOrderId == 0)
+                        {
+                            <option value="0">-- @L["SelectOrder"] --</option>
+                        }
+                        @foreach (var order in orders)
+                        {
+                            <option value="@order.Id">@(order.ScheduledDate?.ToLocalTime().ToString("d") ?? L["NoDate"]) - @CustomerName(order.CustomerId) (@DisplayOrderNumber(order))</option>
+                        }
+                    </select>
+                </label>
+
+                <label>
+                    @L["SelectOrderItem"]
+                    <select value="@formOrderItemId" @onchange="OnOrderItemSelectChanged" disabled="@(formOrderId == 0)">
+                        @if (formOrderItemId == 0)
+                        {
+                            <option value="0">-- @L["SelectOrderItem"] --</option>
+                        }
+                        @foreach (var item in SelectedOrderItems)
+                        {
+                            <option value="@item.Id">@ProductName(item.ProductId) - @item.Quantity.ToString("N0") @L["Units"]</option>
+                        }
+                    </select>
+                </label>
+
+                <label>
+                    @L["SelectProductPackaging"]
+                    <select value="@formPackagingId" @onchange="OnPackagingSelectChanged" disabled="@(formOrderItemId == 0)">
+                        @if (formPackagingId == 0)
+                        {
+                            <option value="0">-- @L["SelectPackaging"] --</option>
+                        }
+                        @foreach (var pkg in SelectedPackagingOptions)
+                        {
+                            <option value="@pkg.Id">@(string.IsNullOrWhiteSpace(pkg.Type) ? L["BoxPackage"] : pkg.Type) (@pkg.Pieces.ToString("N0") @L["PcsBox"])</option>
+                        }
+                    </select>
+                </label>
+
+                <label>
+                    @L["SelectPalletCapacity"]
+                    <select value="@(formPalletId ?? 0)" @onchange="OnPalletSelectChanged" disabled="@(formPackagingId == 0)">
+                        <option value="0">@L["WithoutPalletBoxesOnly"]</option>
+                        @foreach (var pallet in pallets)
+                        {
+                            <option value="@pallet.Id">@pallet.Name (@pallet.Quantity.ToString("N0") @L["BoxesPallet"])</option>
+                        }
+                    </select>
+                </label>
+            </div>
+
+            @if (formOrderItemId > 0 && formPackagingId > 0)
+            {
+                <div class="calculation-preview">
+                    <span class="calc-kicker">@L["AutomaticCalculation"]</span>
+                    <div class="calc-grid">
+                        <div class="calc-item"><small>@L["TotalUnits"]</small><strong>@FormTotalUnits.ToString("N0")</strong></div>
+                        <div class="calc-item"><small>@L["PackagingSize"]</small><strong>@FormPiecesPerPackage.ToString("N0") @L["PcsBox"]</strong></div>
+                        <div class="calc-item"><small>@L["TotalBoxes"]</small><strong>@FormTotalPackages.ToString("N0") @L["Boxes"]</strong></div>
+                        @if (FormTargetPallets > 0)
+                        {
+                            <div class="calc-item"><small>@L["FullPallets"]</small><strong>@FormTargetPallets @L["PalletsUnit"]</strong></div>
+                            <div class="calc-item"><small>@L["RemainingBoxes"]</small><strong>@FormTargetRemainingPackages @L["Boxes"]</strong></div>
+                        }
+                        else
+                        {
+                            <div class="calc-item"><small>@L["FullPallets"]</small><strong>0 @L["PalletsUnit"]</strong></div>
+                            <div class="calc-item"><small>@L["RemainingBoxes"]</small><strong>@FormTotalPackages @L["Boxes"]</strong></div>
+                        }
+                    </div>
+                </div>
+            }
+
+            <FormActions OnSave="AddTrackerAsync" OnCancel="ToggleAddForm" Label="@L["StartTracking"]" />
+        </section>
+    }
+
+    <div class="trackers-list">
+        @if (trackers.Count == 0)
+        {
+            <div class="panel empty-trackers-panel">
+                <h3>@L["NoTrackersYet"]</h3>
+                <p class="muted">@L["NoTrackersSub"]</p>
+            </div>
+        }
+        else
+        {
+            @foreach (var tracker in trackers)
+            {
+                <div class="tracker-card panel">
+                    <div class="tracker-card-header">
+                        <div>
+                            <span class="panel-kicker tracker-company-label">@tracker.CustomerName</span>
+                            <h3>@tracker.ProductName</h3>
+                            <div class="tracker-meta">
+                                <span class="meta-tag meta-tag-date">@L["Date"]: @tracker.ScheduledDateText</span>
+                                <span class="meta-tag">@L["Orders"] @tracker.OrderNumber</span>
+                                <span class="meta-tag">@L["Target"]: @tracker.TotalUnits.ToString("N0") @L["Units"]</span>
+                            </div>
+                        </div>
+                        <div class="tracker-card-actions">
+                            <button class="link-button" @onclick="() => ResetTrackerAsync(tracker)">@L["Reset"]</button>
+                            <button class="danger-button" @onclick="() => DeleteTrackerAsync(tracker.Id)">@L["Remove"]</button>
+                        </div>
+                    </div>
+
+                    <div class="tracker-progress-summary">
+                        <div class="progress-info-row">
+                            <span>@L["OverallProgress"]: <strong>@tracker.PercentComplete%</strong></span>
+                            <span>@tracker.TotalCompletedUnits.ToString("N0") / @tracker.TotalUnits.ToString("N0") @L["Units"]</span>
+                        </div>
+                        <div class="progress-bar-track">
+                            <div class="progress-bar-fill" style="width: @tracker.PercentComplete%;"></div>
+                        </div>
+                    </div>
+
+                    <div class="tracker-counters-grid">
+                        @if (tracker.TargetPallets > 0)
+                        {
+                            <div class="counter-box">
+                                <div class="counter-label">
+                                    <strong>@L["PalletsTracker"]</strong>
+                                    <small>@L["Capacity"]: @tracker.PackagesPerPallet @L["BoxesPallet"]</small>
+                                </div>
+                                <div class="counter-display">
+                                    <button class="count-btn" @onclick="() => ChangePalletCountAsync(tracker, -1)" disabled="@(tracker.CompletedPallets <= 0)">−</button>
+                                    <span class="count-number">@tracker.CompletedPallets <small>/ @tracker.TargetPallets</small></span>
+                                    <button class="count-btn" @onclick="() => ChangePalletCountAsync(tracker, 1)" disabled="@(tracker.CompletedPallets >= tracker.TargetPallets)">+</button>
+                                </div>
+                                @if (tracker.CompletedPallets >= tracker.TargetPallets)
+                                {
+                                    <span class="badge-complete">@L["PalletsCompleted"]</span>
+                                }
+                            </div>
+                        }
+
+                        @if (tracker.TargetRemainingPackages > 0 || tracker.TargetPallets == 0)
+                        {
+                            <div class="counter-box">
+                                <div class="counter-label">
+                                    <strong>@(tracker.TargetPallets > 0 ? L["RemainingBoxesTracker"] : L["BoxesTracker"])</strong>
+                                    <small>@L["Packaging"]: @tracker.PiecesPerPackage @L["PcsBox"]</small>
+                                </div>
+                                <div class="counter-display">
+                                    <button class="count-btn" @onclick="() => ChangePackageCountAsync(tracker, -1)" disabled="@(tracker.CompletedPackages <= 0)">−</button>
+                                    <span class="count-number">@tracker.CompletedPackages <small>/ @(tracker.TargetPallets > 0 ? tracker.TargetRemainingPackages : tracker.TotalPackages)</small></span>
+                                    <button class="count-btn" @onclick="() => ChangePackageCountAsync(tracker, 1)" disabled="@(tracker.CompletedPackages >= (tracker.TargetPallets > 0 ? tracker.TargetRemainingPackages : tracker.TotalPackages))">+</button>
+                                </div>
+                                @if (tracker.CompletedPackages >= (tracker.TargetPallets > 0 ? tracker.TargetRemainingPackages : tracker.TotalPackages))
+                                {
+                                    <span class="badge-complete">@L["BoxesCompleted"]</span>
+                                }
+                            </div>
+                        }
+                    </div>
+
+                    <div class="tracker-history-section">
+                        <button class="secondary link-button tracker-history-toggle" @onclick="() => ToggleHistory(tracker.Id)">
+                            @(expandedHistoryTrackerIds.Contains(tracker.Id) ? $"{L["HideHistory"]} ▲" : $"{L["ShowHistory"]} ({tracker.History.Count}) ▼")
+                        </button>
+
+                        @if (expandedHistoryTrackerIds.Contains(tracker.Id))
+                        {
+                            <div class="history-panel tracker-history-panel">
+                                <div class="history-heading">
+                                    <strong>@L["TrackerHistory"]</strong>
+                                    <button class="danger-button" @onclick="() => ClearTrackerHistoryAsync(tracker)" disabled="@(tracker.History.Count == 0)">@L["ClearHistory"]</button>
+                                </div>
+                                @if (tracker.History.Count == 0)
+                                {
+                                    <p class="history-empty">@L["NoHistoryRecorded"]</p>
+                                }
+                                else
+                                {
+                                    <div class="history-list">
+                                        @foreach (var entry in tracker.History)
+                                        {
+                                            <div class="history-entry">
+                                                <div><strong>@entry.Action</strong><small>@entry.Timestamp.ToLocalTime().ToString("g")</small></div>
+                                                <span>@entry.OldValue</span><span class="history-arrow">→</span><span>@entry.NewValue</span>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        }
+    </div>
+}
+
+@code {
+    private const string StorageKey = "systembridge_progress_trackers";
+
+    private bool showAddForm;
+    private HashSet<string> expandedHistoryTrackerIds = [];
+    private List<Order> orders = [];
+    private List<OrderItem> orderItems = [];
+    private List<ProductPackaging> packaging = [];
+    private List<Pallet> pallets = [];
+    private List<Customer> customers = [];
+    private List<Product> products = [];
+    private List<ProgressTrackerItem> trackers = [];
+
+    // Form selection state
+    private int formOrderId;
+    private int formOrderItemId;
+    private int formPackagingId;
+    private int? formPalletId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        L.OnLanguageChanged += OnLanguageChanged;
+        if (Api.IsAuthenticated)
+        {
+            await LoadDataAsync();
+            await LoadTrackersFromStorageAsync();
+        }
+    }
+
+    private void OnLanguageChanged() => StateHasChanged();
+    public void Dispose() => L.OnLanguageChanged -= OnLanguageChanged;
+
+    private async Task LoadDataAsync()
+    {
+        orders = await Api.GetOrdersAsync();
+        orderItems = await Api.GetOrderItemsAsync();
+        packaging = await Api.GetProductPackagingAsync();
+        pallets = await Api.GetPalletsAsync();
+        customers = await Api.GetCustomersAsync();
+        products = await Api.GetProductsAsync();
+    }
+
+    private async Task LoadTrackersFromStorageAsync()
+    {
+        try
+        {
+            var json = await JS.InvokeAsync<string>("localStorage.getItem", StorageKey);
+            if (!string.IsNullOrWhiteSpace(json))
+            {
+                var loaded = JsonSerializer.Deserialize<List<ProgressTrackerItem>>(json);
+                if (loaded is not null) trackers = loaded;
+            }
+        }
+        catch
+        {
+            trackers = [];
+        }
+    }
+
+    private async Task SaveTrackersToStorageAsync()
+    {
+        try
+        {
+            var json = JsonSerializer.Serialize(trackers);
+            await JS.InvokeVoidAsync("localStorage.setItem", StorageKey, json);
+        }
+        catch
+        {
+            // Ignore storage write errors
+        }
+    }
+
+    private void ToggleAddForm()
+    {
+        showAddForm = !showAddForm;
+        if (showAddForm) ResetForm();
+    }
+
+    private void ResetForm()
+    {
+        formOrderId = orders.FirstOrDefault()?.Id ?? 0;
+        OnOrderChanged();
+    }
+
+    private void OnOrderSelectChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var id))
+        {
+            formOrderId = id;
+            OnOrderChanged();
+        }
+    }
+
+    private void OnOrderChanged()
+    {
+        var firstItem = SelectedOrderItems.FirstOrDefault();
+        formOrderItemId = firstItem?.Id ?? 0;
+        OnOrderItemChanged();
+    }
+
+    private void OnOrderItemSelectChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var id))
+        {
+            formOrderItemId = id;
+            OnOrderItemChanged();
+        }
+    }
+
+    private void OnOrderItemChanged()
+    {
+        var firstPkg = SelectedPackagingOptions.FirstOrDefault();
+        formPackagingId = firstPkg?.Id ?? 0;
+        formPalletId = pallets.FirstOrDefault()?.Id;
+    }
+
+    private void OnPackagingSelectChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var id))
+        {
+            formPackagingId = id;
+        }
+    }
+
+    private void OnPalletSelectChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var id))
+        {
+            formPalletId = id > 0 ? id : null;
+        }
+    }
+
+    private IEnumerable<OrderItem> SelectedOrderItems => orderItems.Where(item => item.OrderId == formOrderId);
+
+    private IEnumerable<ProductPackaging> SelectedPackagingOptions
+    {
+        get
+        {
+            var selectedItem = orderItems.FirstOrDefault(item => item.Id == formOrderItemId);
+            if (selectedItem is null) return packaging;
+            var match = packaging.Where(pkg => pkg.ProductId == selectedItem.ProductId).ToList();
+            return match.Count > 0 ? match : packaging;
+        }
+    }
+
+    // Computed form properties
+    private OrderItem? SelectedOrderItem => orderItems.FirstOrDefault(item => item.Id == formOrderItemId);
+    private ProductPackaging? SelectedPackaging => packaging.FirstOrDefault(pkg => pkg.Id == formPackagingId);
+    private Pallet? SelectedPallet => formPalletId.HasValue ? pallets.FirstOrDefault(p => p.Id == formPalletId.Value) : null;
+
+    private int FormTotalUnits => SelectedOrderItem?.Quantity ?? 0;
+    private int FormPiecesPerPackage => SelectedPackaging?.Pieces > 0 ? SelectedPackaging.Pieces : 1;
+    private int FormTotalPackages => FormPiecesPerPackage > 0 ? (int)Math.Ceiling((double)FormTotalUnits / FormPiecesPerPackage) : 0;
+    private int FormPackagesPerPallet => SelectedPallet?.Quantity > 0 ? SelectedPallet.Quantity : 0;
+    private int FormTargetPallets => FormPackagesPerPallet > 0 ? FormTotalPackages / FormPackagesPerPallet : 0;
+    private int FormTargetRemainingPackages => FormPackagesPerPallet > 0 ? FormTotalPackages % FormPackagesPerPallet : FormTotalPackages;
+
+    private async Task AddTrackerAsync()
+    {
+        var order = orders.FirstOrDefault(o => o.Id == formOrderId);
+        var orderItem = SelectedOrderItem;
+        var pkg = SelectedPackaging;
+        if (order is null || orderItem is null || pkg is null) return;
+
+        var customerName = CustomerName(order.CustomerId);
+        var productName = ProductName(orderItem.ProductId);
+        var orderNum = DisplayOrderNumber(order);
+        var schedDate = order.ScheduledDate?.ToLocalTime().ToString("d") ?? "No date";
+
+        var newItem = new ProgressTrackerItem
+        {
+            Id = Guid.NewGuid().ToString(),
+            OrderId = formOrderId,
+            OrderItemId = formOrderItemId,
+            ProductPackagingId = formPackagingId,
+            PalletId = formPalletId,
+            CustomerName = customerName,
+            ProductName = productName,
+            OrderNumber = orderNum,
+            ScheduledDateText = schedDate,
+            TotalUnits = FormTotalUnits,
+            PiecesPerPackage = FormPiecesPerPackage,
+            TotalPackages = FormTotalPackages,
+            PackagesPerPallet = FormPackagesPerPallet,
+            TargetPallets = FormTargetPallets,
+            TargetRemainingPackages = FormTargetRemainingPackages,
+            CompletedPallets = 0,
+            CompletedPackages = 0
+        };
+
+        newItem.History.Add(new TrackerHistoryEntry
+        {
+            Timestamp = DateTime.Now,
+            Action = L["TrackerCreated"],
+            OldValue = $"0 {L["Units"]}",
+            NewValue = $"{L["Target"]}: {FormTotalUnits:N0} {L["Units"]}"
+        });
+
+        trackers.Insert(0, newItem);
+        await SaveTrackersToStorageAsync();
+        showAddForm = false;
+    }
+
+    private async Task ChangePalletCountAsync(ProgressTrackerItem tracker, int delta)
+    {
+        var oldPallets = tracker.CompletedPallets;
+        var oldUnits = tracker.TotalCompletedUnits;
+        var newPallets = Math.Clamp(tracker.CompletedPallets + delta, 0, tracker.TargetPallets);
+        if (newPallets == oldPallets) return;
+
+        tracker.CompletedPallets = newPallets;
+        var newUnits = tracker.TotalCompletedUnits;
+
+        tracker.History.Insert(0, new TrackerHistoryEntry
+        {
+            Timestamp = DateTime.Now,
+            Action = delta > 0 ? $"+1 {L["Pallet"]}" : $"-1 {L["Pallet"]}",
+            OldValue = $"{oldPallets} {L["PalletsUnit"]} ({oldUnits:N0} {L["Units"]})",
+            NewValue = $"{newPallets} {L["PalletsUnit"]} ({newUnits:N0} {L["Units"]})"
+        });
+
+        await SaveTrackersToStorageAsync();
+    }
+
+    private async Task ChangePackageCountAsync(ProgressTrackerItem tracker, int delta)
+    {
+        var oldPackages = tracker.CompletedPackages;
+        var oldUnits = tracker.TotalCompletedUnits;
+        var maxPackages = tracker.TargetPallets > 0 ? tracker.TargetRemainingPackages : tracker.TotalPackages;
+        var newPackages = Math.Clamp(tracker.CompletedPackages + delta, 0, maxPackages);
+        if (newPackages == oldPackages) return;
+
+        tracker.CompletedPackages = newPackages;
+        var newUnits = tracker.TotalCompletedUnits;
+
+        var boxLabel = tracker.TargetPallets > 0 ? $"{L["Package"]} ({L["Remaining"]})" : L["Package"];
+        tracker.History.Insert(0, new TrackerHistoryEntry
+        {
+            Timestamp = DateTime.Now,
+            Action = delta > 0 ? $"+1 {boxLabel}" : $"-1 {boxLabel}",
+            OldValue = $"{oldPackages} {L["Boxes"]} ({oldUnits:N0} {L["Units"]})",
+            NewValue = $"{newPackages} {L["Boxes"]} ({newUnits:N0} {L["Units"]})"
+        });
+
+        await SaveTrackersToStorageAsync();
+    }
+
+    private async Task ResetTrackerAsync(ProgressTrackerItem tracker)
+    {
+        if (tracker.CompletedPallets == 0 && tracker.CompletedPackages == 0) return;
+
+        var oldPallets = tracker.CompletedPallets;
+        var oldPackages = tracker.CompletedPackages;
+        var oldUnits = tracker.TotalCompletedUnits;
+
+        tracker.CompletedPallets = 0;
+        tracker.CompletedPackages = 0;
+
+        tracker.History.Insert(0, new TrackerHistoryEntry
+        {
+            Timestamp = DateTime.Now,
+            Action = L["ResetProgress"],
+            OldValue = $"{oldPallets} {L["PalletsUnit"]}, {oldPackages} {L["Boxes"]} ({oldUnits:N0} {L["Units"]})",
+            NewValue = $"0 {L["PalletsUnit"]}, 0 {L["Boxes"]} (0 {L["Units"]})"
+        });
+
+        await SaveTrackersToStorageAsync();
+    }
+
+    private async Task ClearTrackerHistoryAsync(ProgressTrackerItem tracker)
+    {
+        tracker.History.Clear();
+        await SaveTrackersToStorageAsync();
+    }
+
+    private void ToggleHistory(string trackerId)
+    {
+        if (!expandedHistoryTrackerIds.Remove(trackerId))
+            expandedHistoryTrackerIds.Add(trackerId);
+    }
+
+    private async Task DeleteTrackerAsync(string id)
+    {
+        expandedHistoryTrackerIds.Remove(id);
+        trackers.RemoveAll(t => t.Id == id);
+        await SaveTrackersToStorageAsync();
+    }
+
+    private string CustomerName(int id) => customers.FirstOrDefault(c => c.Id == id)?.Name ?? $"Customer #{id}";
+    private string ProductName(int id) => products.FirstOrDefault(p => p.Id == id)?.Name ?? $"Product #{id}";
+    private string DisplayOrderNumber(Order order) => string.IsNullOrWhiteSpace(order.OrderNumber) ? $"#{order.Id}" : order.OrderNumber;
+
+    public class ProgressTrackerItem
+    {
+        public string Id { get; set; } = string.Empty;
+        public int OrderId { get; set; }
+        public int OrderItemId { get; set; }
+        public int ProductPackagingId { get; set; }
+        public int? PalletId { get; set; }
+        public string CustomerName { get; set; } = string.Empty;
+        public string ProductName { get; set; } = string.Empty;
+        public string OrderNumber { get; set; } = string.Empty;
+        public string ScheduledDateText { get; set; } = string.Empty;
+        public int TotalUnits { get; set; }
+        public int PiecesPerPackage { get; set; }
+        public int TotalPackages { get; set; }
+        public int PackagesPerPallet { get; set; }
+        public int TargetPallets { get; set; }
+        public int TargetRemainingPackages { get; set; }
+        public int CompletedPallets { get; set; }
+        public int CompletedPackages { get; set; }
+        public List<TrackerHistoryEntry> History { get; set; } = [];
+
+        public int TotalCompletedPackages => (CompletedPallets * PackagesPerPallet) + CompletedPackages;
+        public int TotalCompletedUnits => TotalCompletedPackages * PiecesPerPackage;
+        public int PercentComplete => TotalUnits > 0 ? Math.Min(100, (int)Math.Round((double)TotalCompletedUnits / TotalUnits * 100)) : 0;
+    }
+
+    public class TrackerHistoryEntry
+    {
+        public DateTime Timestamp { get; set; } = DateTime.Now;
+        public string Action { get; set; } = string.Empty;
+        public string OldValue { get; set; } = string.Empty;
+        public string NewValue { get; set; } = string.Empty;
+    }
+}

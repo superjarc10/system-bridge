@@ -8,7 +8,8 @@ public class Shipment
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? ShippedAt { get; set; }
     public DateTime? ScheduledDate { get; set; }
-    public string Color { get; set; } = "#D9EAD3";
+    public ShipmentType Type { get; set; } = ShipmentType.OUT;
+    public string Color { get; set; } = "#4caf50";
     public ShipmentStatus Status { get; set; } = ShipmentStatus.Planned;
     public bool TruckDeliveryConfirmed { get; set; }
 

@@ -30,6 +30,10 @@ public class SystemBridgeDbContext : DbContext
             .Property(shipment => shipment.Status)
             .HasConversion<string>();
 
+        modelBuilder.Entity<Shipment>()
+            .Property(shipment => shipment.Type)
+            .HasConversion<string>();
+
         modelBuilder.Entity<Order>()
             .HasIndex(order => order.OrderNumber)
             .IsUnique();

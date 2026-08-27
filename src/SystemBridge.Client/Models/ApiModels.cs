@@ -21,6 +21,12 @@ public enum ShipmentStatus
     Cancelled
 }
 
+public enum ShipmentType
+{
+    IN,
+    OUT
+}
+
 public sealed class Customer
 {
     public int Id { get; set; }
@@ -74,7 +80,7 @@ public sealed class Order
     public int CustomerId { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? ScheduledDate { get; set; }
-    public string Color { get; set; } = "#D9EAD3";
+    public string Color { get; set; } = "#b0b0b0";
     public OrderStatus Status { get; set; }
     public string Notes { get; set; } = string.Empty;
     public Customer? Customer { get; set; }
@@ -100,7 +106,8 @@ public sealed class Shipment
     public DateTime CreatedAt { get; set; }
     public DateTime? ShippedAt { get; set; }
     public DateTime? ScheduledDate { get; set; }
-    public string Color { get; set; } = "#D9EAD3";
+    public ShipmentType Type { get; set; } = ShipmentType.OUT;
+    public string Color { get; set; } = "#4caf50";
     public ShipmentStatus Status { get; set; }
     public bool TruckDeliveryConfirmed { get; set; }
     public Customer? Customer { get; set; }
@@ -180,7 +187,7 @@ public sealed class OrderRequest
     public int CustomerId { get; set; }
     public DateTime? CreatedAt { get; set; }
     public DateTime? ScheduledDate { get; set; }
-    public string Color { get; set; } = "#D9EAD3";
+    public string Color { get; set; } = "#b0b0b0";
     public OrderStatus Status { get; set; } = OrderStatus.NotStarted;
     public string Notes { get; set; } = string.Empty;
 }
@@ -199,7 +206,8 @@ public sealed class ShipmentRequest
     public DateTime? CreatedAt { get; set; }
     public DateTime? ShippedAt { get; set; }
     public DateTime? ScheduledDate { get; set; }
-    public string Color { get; set; } = "#D9EAD3";
+    public ShipmentType Type { get; set; } = ShipmentType.OUT;
+    public string Color { get; set; } = "#4caf50";
     public ShipmentStatus Status { get; set; } = ShipmentStatus.Planned;
     public bool TruckDeliveryConfirmed { get; set; }
 }

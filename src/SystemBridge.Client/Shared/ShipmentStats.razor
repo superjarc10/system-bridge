@@ -1,10 +1,11 @@
 @using SystemBridge.Client.Models
+@inject LocalizationService L
 
 <section class="shipment-stats" aria-label="Shipment statistics">
-    <div class="stats-heading"><strong>Shipment check</strong><span>@Stats.Count product types</span></div>
+    <div class="stats-heading"><strong>@L["ShipmentCheck"]</strong><span>@Stats.Count @L["ProductTypes"]</span></div>
     @if (Stats.Count == 0)
     {
-        <p class="stats-empty">Add shipment items to calculate product totals.</p>
+        <p class="stats-empty">@L["AddShipmentItemsToCalculate"]</p>
     }
     else
     {
@@ -13,21 +14,21 @@
             {
                 <div class="stat-line @(stat.IsEnough ? "stat-enough" : "stat-short")">
                     <strong>@stat.ProductName</strong>
-                    <span>Needed @stat.Required.ToString("N0")</span>
+                    <span>@L["Needed"] @stat.Required.ToString("N0")</span>
                     @if (stat.PalletCount > 0)
                     {
-                        <span>Pallets @stat.PalletCount.ToString("N0")</span>
+                        <span>@L["PalletsUnit"] @stat.PalletCount.ToString("N0")</span>
                     }
                     @if (stat.PackagingCount > 0)
                     {
-                        <span>Packaging @stat.PackagingCount.ToString("N0")</span>
+                        <span>@L["PackagingUnit"] @stat.PackagingCount.ToString("N0")</span>
                     }
-                    <span>Products @stat.PackagedProducts.ToString("N0")</span>
+                    <span>@L["ProductsUnit"] @stat.PackagedProducts.ToString("N0")</span>
                     @if (stat.IsEnough && stat.Surplus > 0)
                     {
-                        <span>Over @stat.Surplus.ToString("N0")</span>
+                        <span>@L["Over"] @stat.Surplus.ToString("N0")</span>
                     }
-                    <span>@(stat.IsEnough ? $"Over {stat.Remaining:N0}" : $"Short {Math.Abs(stat.Remaining):N0}")</span>
+                    <span>@(stat.IsEnough ? $"{L["Over"]} {stat.Remaining:N0}" : $"{L["Short"]} {Math.Abs(stat.Remaining):N0}")</span>
                 </div>
             }
         </div>
@@ -35,10 +36,10 @@
     @foreach (var group in ItemGroups)
     {
         <section class="shipment-item-group">
-            <div class="shipment-item-group-heading"><strong>@group.ProductName</strong><span>Ordered @group.OrderedAmount.ToString("N0")</span></div>
+            <div class="shipment-item-group-heading"><strong>@group.ProductName</strong><span>@L["Ordered"] @group.OrderedAmount.ToString("N0")</span></div>
             @foreach (var item in group.Items)
             {
-                <div class="shipment-item-group-row"><span><strong>@item.ShipmentItem.Quantity.ToString("N0") @(item.ShipmentItem.PalletId.HasValue ? "pallets" : "packages")</strong><small class="shipment-item-order-info">@CustomerLabel(item.OrderItem.OrderId) (@OrderLabel(item.OrderItem.OrderId))</small></span><span>Products @item.TotalProducts.ToString("N0")</span><span class="shipment-item-actions"><button class="link-button" @onclick="() => OnEdit.InvokeAsync(item.ShipmentItem)">Edit</button><button class="danger-button" @onclick="() => OnDelete.InvokeAsync(item.ShipmentItem.Id)">Delete</button></span></div>
+                <div class="shipment-item-group-row"><span><strong>@item.ShipmentItem.Quantity.ToString("N0") @(item.ShipmentItem.PalletId.HasValue ? L["PalletsUnit"] : L["Packages"])</strong><small class="shipment-item-order-info">@CustomerLabel(item.OrderItem.OrderId) (@OrderLabel(item.OrderItem.OrderId))</small></span><span>@L["ProductsUnit"] @item.TotalProducts.ToString("N0")</span><span class="shipment-item-actions"><button class="link-button" @onclick="() => OnEdit.InvokeAsync(item.ShipmentItem)">@L["Edit"]</button><button class="danger-button" @onclick="() => OnDelete.InvokeAsync(item.ShipmentItem.Id)">@L["Delete"]</button></span></div>
             }
         </section>
     }
