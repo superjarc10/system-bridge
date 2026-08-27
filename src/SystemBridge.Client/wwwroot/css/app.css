@@ -707,6 +707,14 @@ select {
     padding-left: .75rem;
 }
 
+.shipment-item-order-info {
+    color: var(--muted);
+    font-size: .72rem;
+    font-weight: 400;
+    margin-left: .5rem;
+    opacity: .8;
+}
+
 .shipment-item-actions {
     justify-self: end;
     text-align: right;

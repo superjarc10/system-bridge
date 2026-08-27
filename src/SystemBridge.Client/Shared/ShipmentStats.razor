@@ -38,7 +38,7 @@
             <div class="shipment-item-group-heading"><strong>@group.ProductName</strong><span>Ordered @group.OrderedAmount.ToString("N0")</span></div>
             @foreach (var item in group.Items)
             {
-                <div class="shipment-item-group-row"><span>@item.ShipmentItem.Quantity.ToString("N0") @(item.ShipmentItem.PalletId.HasValue ? "pallets" : "packages")</span><span>Products @item.TotalProducts.ToString("N0")</span><span class="shipment-item-actions"><button class="link-button" @onclick="() => OnEdit.InvokeAsync(item.ShipmentItem)">Edit</button><button class="danger-button" @onclick="() => OnDelete.InvokeAsync(item.ShipmentItem.Id)">Delete</button></span></div>
+                <div class="shipment-item-group-row"><span><strong>@item.ShipmentItem.Quantity.ToString("N0") @(item.ShipmentItem.PalletId.HasValue ? "pallets" : "packages")</strong><small class="shipment-item-order-info">@CustomerLabel(item.OrderItem.OrderId) (@OrderLabel(item.OrderItem.OrderId))</small></span><span>Products @item.TotalProducts.ToString("N0")</span><span class="shipment-item-actions"><button class="link-button" @onclick="() => OnEdit.InvokeAsync(item.ShipmentItem)">Edit</button><button class="danger-button" @onclick="() => OnDelete.InvokeAsync(item.ShipmentItem.Id)">Delete</button></span></div>
             }
         </section>
     }
@@ -51,8 +51,25 @@
     [Parameter] public IReadOnlyList<ProductPackaging> Packaging { get; set; } = [];
     [Parameter] public IReadOnlyList<Product> Products { get; set; } = [];
     [Parameter] public IReadOnlyList<Pallet> Pallets { get; set; } = [];
+    [Parameter] public IReadOnlyList<Order> Orders { get; set; } = [];
+    [Parameter] public IReadOnlyList<Customer> Customers { get; set; } = [];
     [Parameter] public EventCallback<ShipmentItem> OnEdit { get; set; }
     [Parameter] public EventCallback<int> OnDelete { get; set; }
+
+    private string OrderLabel(int orderId)
+    {
+        var order = Orders.FirstOrDefault(o => o.Id == orderId);
+        if (order is null) return $"#{orderId}";
+        return string.IsNullOrWhiteSpace(order.OrderNumber) ? $"#{order.Id}" : order.OrderNumber;
+    }
+
+    private string CustomerLabel(int orderId)
+    {
+        var order = Orders.FirstOrDefault(o => o.Id == orderId);
+        if (order is null) return string.Empty;
+        var customer = Customers.FirstOrDefault(c => c.Id == order.CustomerId);
+        return customer?.Name ?? $"Customer #{order.CustomerId}";
+    }
 
     private IReadOnlyList<ProductStat> Stats => ShipmentItems
         .Where(item => item.ShipmentId == ShipmentId)
