@@ -19,10 +19,15 @@
 
 @if (!Api.IsAuthenticated)
 {
-    <section class="panel login-card">
-        <div class="panel-heading"><span class="panel-kicker">@L["Access"]</span><h2>@L["SignInFromManagement"]</h2></div>
-        <p class="muted">@L["ProgressAuthNotice"]</p>
-        <NavLink class="primary calendar-link" href="">@L["OpenManagement"]</NavLink>
+    <section class="panel login-panel login-card">
+        <div class="panel-heading"><span class="panel-kicker">@L["Access"]</span><h2>@L["SignInToContinue"]</h2></div>
+        <div class="form-grid"><label>@L["Username"] <input @bind="login.Username" /></label><label>@L["Password"] <input type="password" @bind="login.Password" /></label></div>
+        <div class="login-actions">
+            <button class="primary" @onclick="LoginAsync">@L["SignIn"]</button>
+            <button class="secondary" @onclick='() => LoginPresetAsync("admin", "password")'>@L["SignInAsAdmin"]</button>
+            <button class="secondary" @onclick='() => LoginPresetAsync("worker", "password")'>@L["SignInAsWorker"]</button>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(message)) { <p class="message">@message</p> }
     </section>
 }
 else
@@ -234,6 +239,8 @@ else
 @code {
     private const string StorageKey = "systembridge_progress_trackers";
 
+    private readonly LoginRequest login = new() { Username = "worker", Password = "password" };
+    private string message = string.Empty;
     private bool showAddForm;
     private HashSet<string> expandedHistoryTrackerIds = [];
     private List<Order> orders = [];
@@ -249,6 +256,31 @@ else
     private int formOrderItemId;
     private int formPackagingId;
     private int? formPalletId;
+
+    private async Task LoginAsync()
+    {
+        try
+        {
+            var response = await Api.LoginAsync(login);
+            message = response is null ? "Invalid username or password." : string.Empty;
+            if (response is not null)
+            {
+                await LoadDataAsync();
+                await LoadTrackersFromStorageAsync();
+            }
+        }
+        catch (HttpRequestException)
+        {
+            message = "The API is unavailable. Start the backend and try again.";
+        }
+    }
+
+    private async Task LoginPresetAsync(string username, string password)
+    {
+        login.Username = username;
+        login.Password = password;
+        await LoginAsync();
+    }
 
     protected override async Task OnInitializedAsync()
     {

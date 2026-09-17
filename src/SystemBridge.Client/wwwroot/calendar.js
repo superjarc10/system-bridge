@@ -38,6 +38,16 @@ window.systemBridgeCalendar = {
         calendar.render();
         this.instances[element.id] = calendar;
     },
+    updateSize: function (element) {
+        if (element && element.id && this.instances[element.id]) {
+            this.instances[element.id].updateSize();
+        }
+    },
+    clearSelection: function () {
+        document.querySelectorAll('.fc-event.calendar-event-selected').forEach(function (event) {
+            event.classList.remove('calendar-event-selected');
+        });
+    },
     dispose: function (element) {
         const calendar = this.instances[element.id];
         if (calendar) {

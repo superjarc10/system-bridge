@@ -11,4 +11,5 @@ public class ProductPackaging
     public Product Product { get; set; } = null!;
     public PackagingType? PackagingType { get; set; }
     public ICollection<ShipmentItem> ShipmentItems { get; set; } = new List<ShipmentItem>();
+    public ICollection<InventoryItem> InventoryItems { get; set; } = new List<InventoryItem>();
 }

@@ -344,6 +344,73 @@ public class ManagementController(SystemBridgeDbContext db) : ControllerBase
     [HttpDelete("api/shipment-items/{id:int}")]
     public Task<IActionResult> RemoveShipmentItem(int id) => RemoveAsync(db.ShipmentItems, id);
 
+    [HttpGet("api/inventory-items")]
+    public async Task<List<InventoryItem>> GetInventoryItems()
+    {
+        await CleanupExpiredUnconfirmedInventoryItemsAsync();
+        return await db.InventoryItems.AsNoTracking().ToListAsync();
+    }
+
+    [HttpGet("api/inventory-items/{id:int}")]
+    public async Task<InventoryItem?> GetInventoryItem(int id)
+    {
+        await CleanupExpiredUnconfirmedInventoryItemsAsync();
+        return await db.InventoryItems.AsNoTracking().FirstOrDefaultAsync(item => item.Id == id);
+    }
+
+    [HttpPost("api/inventory-items")]
+    public async Task<ActionResult<InventoryItem>> AddInventoryItem(InventoryItemRequest request)
+    {
+        if (!await db.Products.AnyAsync(product => product.Id == request.ProductId)) return NotFound("Product not found.");
+        if (!await db.ProductPackagings.AnyAsync(packaging => packaging.Id == request.ProductPackagingId)) return NotFound("Product packaging not found.");
+        if (request.PalletId.HasValue && !await db.Pallets.AnyAsync(pallet => pallet.Id == request.PalletId.Value)) return NotFound("Pallet not found.");
+        var item = new InventoryItem
+        {
+            ProductId = request.ProductId,
+            QrCode = request.QrCode?.Trim() ?? string.Empty,
+            ProductPackagingId = request.ProductPackagingId,
+            PalletId = request.PalletId,
+            Quantity = request.Quantity <= 0 ? 1 : request.Quantity,
+            Confirmed = request.Confirmed,
+            CreatedAt = DateTime.UtcNow
+        };
+        db.InventoryItems.Add(item);
+        await db.SaveChangesAsync();
+        return Created($"api/inventory-items/{item.Id}", item);
+    }
+
+    [HttpPut("api/inventory-items/{id:int}")]
+    public async Task<IActionResult> UpdateInventoryItem(int id, InventoryItemRequest request)
+    {
+        if (!await db.Products.AnyAsync(product => product.Id == request.ProductId)) return NotFound("Product not found.");
+        if (!await db.ProductPackagings.AnyAsync(packaging => packaging.Id == request.ProductPackagingId)) return NotFound("Product packaging not found.");
+        if (request.PalletId.HasValue && !await db.Pallets.AnyAsync(pallet => pallet.Id == request.PalletId.Value)) return NotFound("Pallet not found.");
+        var item = await db.InventoryItems.FindAsync(id);
+        if (item is null) return NotFound();
+        item.ProductId = request.ProductId;
+        item.QrCode = request.QrCode?.Trim() ?? string.Empty;
+        item.ProductPackagingId = request.ProductPackagingId;
+        item.PalletId = request.PalletId;
+        item.Quantity = request.Quantity <= 0 ? 1 : request.Quantity;
+        item.Confirmed = request.Confirmed;
+        await db.SaveChangesAsync();
+        return Ok(item);
+    }
+
+    [HttpPost("api/inventory-items/{id:int}/confirm")]
+    [HttpPut("api/inventory-items/{id:int}/confirm")]
+    public async Task<IActionResult> ConfirmInventoryItem(int id)
+    {
+        var item = await db.InventoryItems.FindAsync(id);
+        if (item is null) return NotFound();
+        item.Confirmed = true;
+        await db.SaveChangesAsync();
+        return Ok(item);
+    }
+
+    [HttpDelete("api/inventory-items/{id:int}")]
+    public Task<IActionResult> RemoveInventoryItem(int id) => RemoveAsync(db.InventoryItems, id);
+
     private async Task<IActionResult> UpdateAsync<TEntity>(DbSet<TEntity> entities, int id, Action<TEntity> update)
         where TEntity : class
     {
@@ -436,6 +503,20 @@ public class ManagementController(SystemBridgeDbContext db) : ControllerBase
         }
 
         if (shipments.Count > 0) await db.SaveChangesAsync();
+    }
+
+    private async Task CleanupExpiredUnconfirmedInventoryItemsAsync()
+    {
+        var cutoff = DateTime.UtcNow.AddHours(-24);
+        var expired = await db.InventoryItems
+            .Where(item => !item.Confirmed && item.CreatedAt < cutoff)
+            .ToListAsync();
+
+        if (expired.Count > 0)
+        {
+            db.InventoryItems.RemoveRange(expired);
+            await db.SaveChangesAsync();
+        }
     }
 
     private static string FormatDate(DateTime? value) => value?.ToString("yyyy-MM-dd") ?? "Not set";

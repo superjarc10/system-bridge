@@ -178,7 +178,39 @@ body {
 .top-actions {
     align-items: center;
     display: flex;
-    gap: 1rem;
+    gap: .75rem;
+}
+
+.user-badge {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    font-size: .8rem;
+    padding: .25rem .55rem;
+}
+
+.user-badge small {
+    color: var(--teal);
+    font-weight: 700;
+}
+
+.signout-button {
+    font-size: .8rem;
+    padding: .3rem .6rem;
+}
+
+.input-with-button {
+    align-items: center;
+    display: flex;
+    gap: .5rem;
+}
+
+.input-with-button input {
+    flex: 1;
+}
+
+.input-with-button button {
+    white-space: nowrap;
 }
 
 .language-select {
@@ -201,6 +233,10 @@ body {
     align-items: start;
     display: grid;
     gap: 1rem;
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.calendar-workspace-split {
     grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
 }
 

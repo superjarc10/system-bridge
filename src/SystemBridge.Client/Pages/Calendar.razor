@@ -3,14 +3,31 @@
 @inject ApiClient Api
 @inject IJSRuntime JS
 @inject LocalizationService L
+@inject NavigationManager Navigation
 
 <PageTitle>SystemBridge @L["Calendar"]</PageTitle>
 
-<div class="page-toolbar"><strong>@L["Calendar"]</strong><button class="secondary" @onclick="LoadEventsAsync" disabled="@(!Api.IsAuthenticated)">@L["Refresh"]</button></div>
+<div class="page-toolbar"><strong>@L["Calendar"]</strong><button class="secondary" @onclick="LoadEventsAsync" disabled="@(!Api.IsAuthenticated || Api.IsWorker)">@L["Refresh"]</button></div>
 
 @if (!Api.IsAuthenticated)
 {
-    <section class="panel login-card"><div class="panel-heading"><span class="panel-kicker">@L["Access"]</span><h2>@L["SignInFromManagement"]</h2></div><p class="muted">@L["CalendarAuthNotice"]</p><NavLink class="primary calendar-link" href="">@L["OpenManagement"]</NavLink></section>
+    <section class="panel login-panel login-card">
+        <div class="panel-heading"><span class="panel-kicker">@L["Access"]</span><h2>@L["SignInToContinue"]</h2></div>
+        <div class="form-grid"><label>@L["Username"] <input @bind="login.Username" /></label><label>@L["Password"] <input type="password" @bind="login.Password" /></label></div>
+        <div class="login-actions">
+            <button class="primary" @onclick="LoginAsync">@L["SignIn"]</button>
+            <button class="secondary" @onclick='() => LoginPresetAsync("admin", "password")'>@L["SignInAsAdmin"]</button>
+            <button class="secondary" @onclick='() => LoginPresetAsync("worker", "password")'>@L["SignInAsWorker"]</button>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(message)) { <p class="message">@message</p> }
+    </section>
+}
+else if (Api.IsWorker)
+{
+    <section class="panel login-card">
+        <div class="panel-heading"><span class="panel-kicker">@L["Access"]</span><h2>@L["AccessRestricted"]</h2></div>
+        <NavLink class="primary calendar-link" href="progress">@L["ProgressTracking"]</NavLink>
+    </section>
 }
 else
 {
@@ -19,12 +36,12 @@ else
         <button class="@(eventFilter == "Orders" ? "filter-active" : "")" @onclick="ShowOrderEvents">@L["ShowOrders"]</button>
         <button class="@(eventFilter == "Shipments" ? "filter-active" : "")" @onclick="ShowShipmentEvents">@L["ShowShipments"]</button>
     </div>
-    <div class="calendar-workspace">
+    <div class="calendar-workspace @(selectedEvent is not null ? "calendar-workspace-split" : "")">
         <section class="calendar-panel"><div id="systembridge-calendar" @ref="calendarElement"></div></section>
         @if (selectedEvent is not null)
         {
             <section class="calendar-event-details">
-            <div class="event-detail-heading"><div><span class="panel-kicker">@L[selectedEvent.Type]</span><h2>@selectedEvent.CustomerName</h2></div><div><button class="secondary" @onclick="ToggleEdit">@(editing ? L["Cancel"] : L["Edit"])</button><button class="secondary" @onclick="CloseEventDetails">@L["Cancel"]</button></div></div>
+            <div class="event-detail-heading"><div><span class="panel-kicker">@L[selectedEvent.Type]</span><h2>@selectedEvent.CustomerName</h2></div><div><button class="secondary" @onclick="ToggleEdit">@(editing ? L["Cancel"] : L["Edit"])</button><button class="secondary" @onclick="CloseEventDetails">@L["Close"]</button></div></div>
             @if (editing)
             {
                 @if (selectedEvent.Type == "Order")
@@ -57,6 +74,8 @@ else
 }
 
 @code {
+    private readonly LoginRequest login = new() { Username = "admin", Password = "password" };
+    private string message = string.Empty;
     private ElementReference calendarElement;
     private bool initialized;
     private string eventFilter = "All";
@@ -69,6 +88,37 @@ else
     private ShipmentRequest shipmentEdit = new();
     private Dictionary<int, string> ApiCustomerNames { get; } = [];
     private Dictionary<string, CalendarEventDetails> EventDetails { get; } = [];
+
+    private async Task LoginAsync()
+    {
+        try
+        {
+            var response = await Api.LoginAsync(login);
+            message = response is null ? "Invalid username or password." : string.Empty;
+            if (response is not null)
+            {
+                if (Api.IsWorker)
+                {
+                    Navigation.NavigateTo("progress");
+                }
+                else
+                {
+                    await LoadEventsAsync();
+                }
+            }
+        }
+        catch (HttpRequestException)
+        {
+            message = "The API is unavailable. Start the backend and try again.";
+        }
+    }
+
+    private async Task LoginPresetAsync(string username, string password)
+    {
+        login.Username = username;
+        login.Password = password;
+        await LoginAsync();
+    }
 
     protected override void OnInitialized()
     {
@@ -97,11 +147,24 @@ else
         await JS.InvokeVoidAsync("systemBridgeCalendar.init", calendarElement, events, DotNetReference);
     }
 
-    [JSInvokable] public void ShowEventDetails(string eventId) { selectedEventId = eventId; EventDetails.TryGetValue(eventId, out selectedEvent); editing = false; StateHasChanged(); }
+    [JSInvokable] public async Task ShowEventDetails(string eventId)
+    {
+        selectedEventId = eventId;
+        EventDetails.TryGetValue(eventId, out selectedEvent);
+        editing = false;
+        StateHasChanged();
+        await JS.InvokeVoidAsync("systemBridgeCalendar.updateSize", calendarElement);
+    }
     private async Task ShowAllEvents() { eventFilter = "All"; await LoadEventsAsync(); }
     private async Task ShowOrderEvents() { eventFilter = "Orders"; await LoadEventsAsync(); }
     private async Task ShowShipmentEvents() { eventFilter = "Shipments"; await LoadEventsAsync(); }
-    private void CloseEventDetails() { selectedEvent = null; editing = false; }
+    private async Task CloseEventDetails()
+    {
+        selectedEvent = null;
+        editing = false;
+        await JS.InvokeVoidAsync("systemBridgeCalendar.clearSelection");
+        await JS.InvokeVoidAsync("systemBridgeCalendar.updateSize", calendarElement);
+    }
     private void ToggleEdit()
     {
         editing = !editing; if (!editing || selectedEvent is null) return;

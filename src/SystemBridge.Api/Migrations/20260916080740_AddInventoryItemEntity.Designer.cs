@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SystemBridge.Api.Data;
@@ -11,9 +12,11 @@ using SystemBridge.Api.Data;
 namespace SystemBridge.Api.Migrations
 {
     [DbContext(typeof(SystemBridgeDbContext))]
-    partial class SystemBridgeDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260916080740_AddInventoryItemEntity")]
+    partial class AddInventoryItemEntity
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -86,14 +89,8 @@ namespace SystemBridge.Api.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
-                    b.Property<bool>("Confirmed")
-                        .HasColumnType("boolean");
-
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("PalletId")
-                        .HasColumnType("integer");
 
                     b.Property<int>("ProductId")
                         .HasColumnType("integer");
@@ -105,12 +102,7 @@ namespace SystemBridge.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<int>("Quantity")
-                        .HasColumnType("integer");
-
                     b.HasKey("Id");
-
-                    b.HasIndex("PalletId");
 
                     b.HasIndex("ProductId");
 
@@ -377,11 +369,6 @@ namespace SystemBridge.Api.Migrations
 
             modelBuilder.Entity("SystemBridge.Api.Models.InventoryItem", b =>
                 {
-                    b.HasOne("SystemBridge.Api.Models.Pallet", "Pallet")
-                        .WithMany()
-                        .HasForeignKey("PalletId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("SystemBridge.Api.Models.Product", "Product")
                         .WithMany("InventoryItems")
                         .HasForeignKey("ProductId")
@@ -393,8 +380,6 @@ namespace SystemBridge.Api.Migrations
                         .HasForeignKey("ProductPackagingId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
-
-                    b.Navigation("Pallet");
 
                     b.Navigation("Product");
 

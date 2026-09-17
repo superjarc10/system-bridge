@@ -18,6 +18,7 @@ public class SystemBridgeDbContext : DbContext
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
     public DbSet<Shipment> Shipments => Set<Shipment>();
     public DbSet<ShipmentItem> ShipmentItems => Set<ShipmentItem>();
+    public DbSet<InventoryItem> InventoryItems => Set<InventoryItem>();
     public DbSet<ChangeHistory> ChangeHistory => Set<ChangeHistory>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -101,6 +102,24 @@ public class SystemBridgeDbContext : DbContext
             .OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<ShipmentItem>()
+            .HasOne(item => item.Pallet)
+            .WithMany()
+            .HasForeignKey(item => item.PalletId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<InventoryItem>()
+            .HasOne(item => item.Product)
+            .WithMany(product => product.InventoryItems)
+            .HasForeignKey(item => item.ProductId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<InventoryItem>()
+            .HasOne(item => item.ProductPackaging)
+            .WithMany(packaging => packaging.InventoryItems)
+            .HasForeignKey(item => item.ProductPackagingId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<InventoryItem>()
             .HasOne(item => item.Pallet)
             .WithMany()
             .HasForeignKey(item => item.PalletId)

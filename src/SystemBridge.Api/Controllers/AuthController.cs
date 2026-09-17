@@ -11,6 +11,12 @@ namespace SystemBridge.Api.Controllers;
 [Route("api/[controller]")]
 public class AuthController : ControllerBase
 {
+    private static readonly Dictionary<string, (string Password, string Role)> Users = new(StringComparer.OrdinalIgnoreCase)
+    {
+        { "admin", ("password", "Admin") },
+        { "worker", ("password", "Worker") }
+    };
+
     private readonly IConfiguration _configuration;
 
     public AuthController(IConfiguration configuration)
@@ -21,7 +27,9 @@ public class AuthController : ControllerBase
     [HttpPost("login")]
     public IActionResult Login([FromBody] LoginRequest request)
     {
-        if (request.Username != "admin" || request.Password != "password")
+        if (string.IsNullOrWhiteSpace(request.Username) ||
+            !Users.TryGetValue(request.Username, out var user) ||
+            user.Password != request.Password)
         {
             return Unauthorized(new { message = "Invalid username or password" });
         }
@@ -35,7 +43,8 @@ public class AuthController : ControllerBase
             Subject = new ClaimsIdentity(new[]
             {
                 new Claim(ClaimTypes.Name, request.Username),
-                new Claim(ClaimTypes.NameIdentifier, request.Username)
+                new Claim(ClaimTypes.NameIdentifier, request.Username),
+                new Claim(ClaimTypes.Role, user.Role)
             }),
             Expires = expiresAt,
             SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
@@ -47,7 +56,9 @@ public class AuthController : ControllerBase
         return Ok(new AuthResponse
         {
             Token = jwt,
-            ExpiresAt = expiresAt
+            ExpiresAt = expiresAt,
+            Role = user.Role,
+            Username = request.Username
         });
     }
 }

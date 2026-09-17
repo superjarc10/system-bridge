@@ -1,5 +1,7 @@
 ﻿@inherits LayoutComponentBase
 @inject LocalizationService L
+@inject ApiClient Api
+@inject NavigationManager Navigation
 @implements IDisposable
 
 <div class="page">
@@ -10,11 +12,19 @@
     <main>
         <div class="top-row px-4">
             <div class="top-navigation">
-                <NavLink href="" Match="NavLinkMatch.All">@L["Management"]</NavLink>
-                <NavLink href="calendar">@L["Calendar"]</NavLink>
+                @if (!Api.IsWorker)
+                {
+                    <NavLink href="" Match="NavLinkMatch.All">@L["Management"]</NavLink>
+                    <NavLink href="calendar">@L["Calendar"]</NavLink>
+                }
                 <NavLink href="progress">@L["ProgressTracking"]</NavLink>
             </div>
             <div class="top-actions">
+                @if (Api.IsAuthenticated)
+                {
+                    <span class="user-badge"><strong>@Api.CurrentUsername</strong> <small>(@L[Api.UserRole])</small></span>
+                    <button class="secondary signout-button" @onclick="Logout">@L["SignOut"]</button>
+                }
                 <select class="language-select" value="@L.CurrentCulture" @onchange="OnLanguageSelect">
                     @foreach (var lang in L.SupportedLanguages)
                     {
@@ -34,7 +44,8 @@
 @code {
     protected override async Task OnInitializedAsync()
     {
-        L.OnLanguageChanged += OnLanguageChanged;
+        L.OnLanguageChanged += OnStateChanged;
+        Api.OnAuthStateChanged += OnStateChanged;
         await L.InitializeAsync();
     }
 
@@ -46,10 +57,17 @@
         }
     }
 
-    private void OnLanguageChanged() => StateHasChanged();
+    private void Logout()
+    {
+        Api.Logout();
+        Navigation.NavigateTo("", forceLoad: true);
+    }
+
+    private void OnStateChanged() => StateHasChanged();
 
     public void Dispose()
     {
-        L.OnLanguageChanged -= OnLanguageChanged;
+        L.OnLanguageChanged -= OnStateChanged;
+        Api.OnAuthStateChanged -= OnStateChanged;
     }
 }

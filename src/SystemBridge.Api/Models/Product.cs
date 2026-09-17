@@ -11,4 +11,5 @@ public class Product
 
     public ICollection<ProductPackaging> PackagingOptions { get; set; } = new List<ProductPackaging>();
     public ICollection<OrderItem> OrderItems { get; set; } = new List<OrderItem>();
+    public ICollection<InventoryItem> InventoryItems { get; set; } = new List<InventoryItem>();
 }

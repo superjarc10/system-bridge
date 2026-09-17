@@ -1,6 +1,7 @@
 @page "/"
 @inject ApiClient Api
 @inject LocalizationService L
+@inject NavigationManager Navigation
 @implements IDisposable
 
 <PageTitle>SystemBridge @L["Management"]</PageTitle>
@@ -10,8 +11,19 @@
     <section class="panel login-panel login-card">
         <div class="panel-heading"><span class="panel-kicker">@L["Access"]</span><h2>@L["SignInToContinue"]</h2></div>
         <div class="form-grid"><label>@L["Username"] <input @bind="login.Username" /></label><label>@L["Password"] <input type="password" @bind="login.Password" /></label></div>
-        <button class="primary" @onclick="LoginAsync">@L["SignIn"]</button>
+        <div class="login-actions">
+            <button class="primary" @onclick="LoginAsync">@L["SignIn"]</button>
+            <button class="secondary" @onclick='() => LoginPresetAsync("admin", "password")'>@L["SignInAsAdmin"]</button>
+            <button class="secondary" @onclick='() => LoginPresetAsync("worker", "password")'>@L["SignInAsWorker"]</button>
+        </div>
         @if (!string.IsNullOrWhiteSpace(message)) { <p class="message">@message</p> }
+    </section>
+}
+else if (Api.IsWorker)
+{
+    <section class="panel login-card">
+        <div class="panel-heading"><span class="panel-kicker">@L["Access"]</span><h2>@L["AccessRestricted"]</h2></div>
+        <NavLink class="primary calendar-link" href="progress">@L["ProgressTracking"]</NavLink>
     </section>
 }
 else
@@ -116,7 +128,7 @@ else
                     </EntityTable>
                 </ResourcePanel>
             }
-            else
+            else if (activeResource == "Pallets")
             {
                 <ResourcePanel Title="Pallets" Count="pallets.Count" OnRefresh="LoadPalletsAsync">
                     <div class="panel-toolbar"><span>@L["PalletsSub"]</span><button class="primary" @onclick="OpenPalletForm">@L["AddPallet"]</button></div>
@@ -124,32 +136,172 @@ else
                     <EntityTable>@foreach (var item in pallets) { <tr><td><strong>@item.Name</strong><small>@item.Description</small></td><td>@item.Quantity.ToString("N0") @L["Units"]</td><td class="actions"><button class="link-button" @onclick="() => EditPallet(item)">@L["Edit"]</button><button class="danger-button" @onclick="() => DeletePalletAsync(item.Id)">@L["Delete"]</button></td></tr> }</EntityTable>
                 </ResourcePanel>
             }
+            else if (activeResource == "Inventory")
+            {
+                <ResourcePanel Title="Inventory" Count="inventoryItems.Count" OnRefresh="LoadInventoryItemsAsync">
+                    <div class="panel-toolbar"><span>@L["InventorySub"]</span><button class="primary" @onclick="OpenInventoryItemForm">@L["AddInventoryItem"]</button></div>
+                    @if (showInventoryItemForm)
+                    {
+                        <div class="entry-form">
+                            <div class="form-grid">
+                                <label>
+                                    @L["Products"]
+                                    <select @bind="inventoryItemForm.ProductId" @bind:after="SyncInventoryProductPackaging">
+                                        @foreach (var product in products)
+                                        {
+                                            <option value="@product.Id">@product.Name</option>
+                                        }
+                                    </select>
+                                </label>
+                                <label>
+                                    @L["ProductPackaging"]
+                                    <select @bind="inventoryItemForm.ProductPackagingId">
+                                        @foreach (var pkg in AvailableInventoryPackagings)
+                                        {
+                                            <option value="@pkg.Id">@(string.IsNullOrWhiteSpace(pkg.Type) ? L["Package"] : pkg.Type) (@pkg.Pieces.ToString("N0") @L["Pieces"])</option>
+                                        }
+                                    </select>
+                                </label>
+                                <label>
+                                    @L["Pallets"]
+                                    <select @bind="inventoryItemForm.PalletId">
+                                        <option value="">@L["WithoutPallet"]</option>
+                                        @foreach (var pallet in pallets)
+                                        {
+                                            <option value="@pallet.Id">@pallet.Name (@pallet.Quantity.ToString("N0") @L["Packages"])</option>
+                                        }
+                                    </select>
+                                </label>
+                                <label>
+                                    @(inventoryItemForm.PalletId.HasValue ? L["PalletCount"] : L["PackagingCount"])
+                                    <input type="number" @bind="inventoryItemForm.Quantity" min="1" />
+                                </label>
+                                <label>
+                                    @L["QrCode"]
+                                    <div class="input-with-button">
+                                        <input @bind="inventoryItemForm.QrCode" placeholder="QR-PROD-0001" />
+                                        <button type="button" class="secondary" @onclick="GenerateRandomQrCode">@L["GenerateQrCode"]</button>
+                                    </div>
+                                </label>
+                                <label class="toggle-field">
+                                    <input type="checkbox" @bind="inventoryItemForm.Confirmed" /> @L["Confirmed"]
+                                </label>
+                            </div>
+                            <FormActions OnSave="SaveInventoryItemAsync" OnCancel="CancelForms" Label="@(inventoryItemId.HasValue ? L["UpdateInventoryItem"] : L["CreateInventoryItem"])" />
+                        </div>
+                    }
+                    @if (inventoryItems.Count == 0)
+                    {
+                        <p class="stats-empty">@L["NoInventoryItems"]</p>
+                    }
+                    else
+                    {
+                        @foreach (var group in GroupedInventoryItems)
+                        {
+                            <section class="shipment-item-group">
+                                <div class="shipment-item-group-heading">
+                                    <strong>@ProductName(group.Key)</strong>
+                                    <span>@L["TotalInventoryItems"]: @group.Sum(i => i.Quantity).ToString("N0") | @L["TotalPieces"]: @group.Sum(i => ItemTotalPieces(i)).ToString("N0")</span>
+                                </div>
+                                <EntityTable>
+                                    @foreach (var item in group)
+                                    {
+                                        <tr>
+                                            <td>
+                                                <strong class="customer-label">@item.QrCode</strong>
+                                                <small class="order-number-label">@InventoryItemDescription(item)</small>
+                                            </td>
+                                            <td>
+                                                <span class="status-badge">@item.Quantity.ToString("N0") @(item.PalletId.HasValue ? (item.Quantity == 1 ? L["Pallet"] : L["PalletsUnit"]) : (item.Quantity == 1 ? L["Package"] : L["Packages"]))</span>
+                                                <span class="status-badge" style="color: var(--ink); margin-left: 0.5rem;">(@ItemTotalPieces(item).ToString("N0") @L["Pieces"])</span>
+                                                <span class="truck-status @(item.Confirmed ? "truck-confirmed" : "truck-pending")" style="margin-left: 0.5rem;">@(item.Confirmed ? L["Confirmed"] : L["Unconfirmed"])</span>
+                                            </td>
+                                            <td class="actions">
+                                                @if (!item.Confirmed)
+                                                {
+                                                    <button class="link-button" @onclick="() => ConfirmInventoryItemAsync(item.Id)">@L["Confirm"]</button>
+                                                }
+                                                <button class="link-button" @onclick="() => EditInventoryItem(item)">@L["Edit"]</button>
+                                                <button class="danger-button" @onclick="() => DeleteInventoryItemAsync(item.Id)">@L["Delete"]</button>
+                                            </td>
+                                        </tr>
+                                    }
+                                </EntityTable>
+                            </section>
+                        }
+                    }
+                </ResourcePanel>
+            }
         </main>
     </div>
 }
 
 @code {
-    private readonly string[] resources = ["Customers", "Products", "Orders", "Shipments", "Pallets"];
+    private readonly string[] resources = ["Customers", "Products", "Orders", "Shipments", "Pallets", "Inventory"];
     private string activeResource = "Customers"; private string productView = "Products"; private string orderSort = "Date"; private bool orderSortAscending = false; private string shipmentSort = "Date"; private bool shipmentSortAscending = false;
     private readonly LoginRequest login = new() { Username = "admin", Password = "password" }; private string message = string.Empty;
-    private List<Customer> customers = []; private List<Product> products = []; private List<ProductPackaging> packaging = []; private List<PackagingType> packagingTypes = []; private List<Pallet> pallets = []; private List<Order> orders = []; private List<OrderItem> orderItems = []; private List<Shipment> shipments = []; private List<ShipmentItem> shipmentItems = []; private List<ChangeHistory> orderHistory = []; private List<ChangeHistory> shipmentHistory = []; private int? orderHistoryOrderId; private int? shipmentHistoryShipmentId; private int? expandedProductId; private int? expandedPackagingId; private int? expandedOrderId; private int? expandedShipmentId;
+    private List<Customer> customers = []; private List<Product> products = []; private List<ProductPackaging> packaging = []; private List<PackagingType> packagingTypes = []; private List<Pallet> pallets = []; private List<Order> orders = []; private List<OrderItem> orderItems = []; private List<Shipment> shipments = []; private List<ShipmentItem> shipmentItems = []; private List<InventoryItem> inventoryItems = []; private List<ChangeHistory> orderHistory = []; private List<ChangeHistory> shipmentHistory = []; private int? orderHistoryOrderId; private int? shipmentHistoryShipmentId; private int? expandedProductId; private int? expandedPackagingId; private int? expandedOrderId; private int? expandedShipmentId;
     private CustomerRequest customerForm = new(); private int? customerId; private bool showCustomerForm; private ProductRequest productForm = new(); private int? productId; private bool showProductForm; private ProductPackagingRequest packagingForm = new(); private int? packagingId; private bool showPackagingForm; private PackagingTypeRequest packagingTypeForm = new(); private int? packagingTypeId; private bool showPackagingTypeForm; private PalletRequest palletForm = new(); private int? palletId; private bool showPalletForm; private OrderRequest orderForm = new(); private int? orderId; private bool showOrderForm; private OrderItemRequest orderItemForm = new(); private int? orderItemId; private bool showOrderItemForm; private ShipmentRequest shipmentForm = new(); private int? shipmentId; private bool showShipmentForm; private ShipmentItemRequest shipmentItemForm = new(); private int? shipmentItemId; private bool showShipmentItemForm; private int shipmentItemOrderId;
+    private InventoryItemRequest inventoryItemForm = new(); private int? inventoryItemId; private bool showInventoryItemForm;
 
     protected override async Task OnInitializedAsync()
     {
-        L.OnLanguageChanged += OnLanguageChanged;
+        L.OnLanguageChanged += OnAuthStateChanged;
+        Api.OnAuthStateChanged += OnAuthStateChanged;
         if (Api.IsAuthenticated) await LoadAllAsync();
     }
-    private void OnLanguageChanged() => StateHasChanged();
-    public void Dispose() => L.OnLanguageChanged -= OnLanguageChanged;
-    private async Task LoginAsync() { try { var response = await Api.LoginAsync(login); message = response is null ? "Invalid username or password." : string.Empty; if (response is not null) await LoadAllAsync(); } catch (HttpRequestException) { message = "The API is unavailable. Start the backend and try again."; } }
-    private async Task LoadAllAsync() { customers = await Api.GetCustomersAsync(); products = await Api.GetProductsAsync(); packaging = await Api.GetProductPackagingAsync(); packagingTypes = await Api.GetPackagingTypesAsync(); pallets = await Api.GetPalletsAsync(); orders = await Api.GetOrdersAsync(); orderItems = await Api.GetOrderItemsAsync(); shipments = await Api.GetShipmentsAsync(); shipmentItems = await Api.GetShipmentItemsAsync(); }
+    private void OnAuthStateChanged() => StateHasChanged();
+    public void Dispose()
+    {
+        L.OnLanguageChanged -= OnAuthStateChanged;
+        Api.OnAuthStateChanged -= OnAuthStateChanged;
+    }
+    private async Task LoginAsync()
+    {
+        try
+        {
+            var response = await Api.LoginAsync(login);
+            message = response is null ? "Invalid username or password." : string.Empty;
+            if (response is not null)
+            {
+                if (Api.IsWorker)
+                {
+                    Navigation.NavigateTo("progress");
+                }
+                else
+                {
+                    await LoadAllAsync();
+                }
+            }
+        }
+        catch (HttpRequestException)
+        {
+            message = "The API is unavailable. Start the backend and try again.";
+        }
+    }
+    private async Task LoginPresetAsync(string username, string password)
+    {
+        login.Username = username;
+        login.Password = password;
+        await LoginAsync();
+    }
+    private async Task LoadAllAsync() { customers = await Api.GetCustomersAsync(); products = await Api.GetProductsAsync(); packaging = await Api.GetProductPackagingAsync(); packagingTypes = await Api.GetPackagingTypesAsync(); pallets = await Api.GetPalletsAsync(); orders = await Api.GetOrdersAsync(); orderItems = await Api.GetOrderItemsAsync(); shipments = await Api.GetShipmentsAsync(); shipmentItems = await Api.GetShipmentItemsAsync(); inventoryItems = await Api.GetInventoryItemsAsync(); }
     private void SelectResource(string resource) { activeResource = resource; CancelForms(); }
     private void ShowProducts() { productView = "Products"; CancelForms(); }
     private void ShowPackaging() { productView = "Packaging"; CancelForms(); }
-    private void CancelForms() { showCustomerForm = showProductForm = showPackagingForm = showPackagingTypeForm = showPalletForm = showOrderForm = showOrderItemForm = showShipmentForm = showShipmentItemForm = false; customerId = productId = packagingId = packagingTypeId = palletId = orderId = orderItemId = shipmentId = shipmentItemId = null; }
-    private string ResourceIndex(string resource) => resource switch { "Customers" => "01", "Products" => "02", "Orders" => "03", "Shipments" => "04", _ => "05" };
+    private void CancelForms() { showCustomerForm = showProductForm = showPackagingForm = showPackagingTypeForm = showPalletForm = showOrderForm = showOrderItemForm = showShipmentForm = showShipmentItemForm = showInventoryItemForm = false; customerId = productId = packagingId = packagingTypeId = palletId = orderId = orderItemId = shipmentId = shipmentItemId = inventoryItemId = null; }
+    private string ResourceIndex(string resource) => resource switch { "Customers" => "01", "Products" => "02", "Orders" => "03", "Shipments" => "04", "Pallets" => "05", _ => "06" };
     private void OpenCustomerForm() { CancelForms(); showCustomerForm = true; customerForm = new(); } private void OpenProductForm() { CancelForms(); showProductForm = true; productForm = new(); } private void OpenPackagingForm() { CancelForms(); showPackagingForm = true; packagingForm = new() { ProductId = products.FirstOrDefault()?.Id ?? 0, PackagingTypeId = packagingTypes.FirstOrDefault()?.Id }; } private void OpenPackagingTypeForm() { CancelForms(); showPackagingTypeForm = true; packagingTypeForm = new(); } private void OpenPalletForm() { CancelForms(); showPalletForm = true; palletForm = new(); } private void OpenOrderForm() { CancelForms(); showOrderForm = true; orderForm = new() { OrderNumber = NewOrderNumber(), CustomerId = customers.FirstOrDefault()?.Id ?? 0, ScheduledDate = DateTime.Today }; } private void OpenOrderItemForm(int orderId) { CancelForms(); expandedOrderId = orderId; showOrderItemForm = true; orderItemForm = new() { OrderId = orderId, ProductId = products.FirstOrDefault()?.Id ?? 0, Quantity = 1 }; } private void OpenShipmentForm() { CancelForms(); showShipmentForm = true; shipmentForm = new() { ShipmentNumber = NewShipmentNumber(), CustomerId = customers.FirstOrDefault()?.Id ?? 0, ScheduledDate = DateTime.Today }; } private void OpenShipmentItemForm(int shipmentId) { CancelForms(); expandedShipmentId = shipmentId; showShipmentItemForm = true; shipmentItemOrderId = orderItems.FirstOrDefault()?.OrderId ?? 0; showShipmentItemForm = true; shipmentItemForm = new() { ShipmentId = shipmentId, OrderItemId = ShipmentOrderItems.FirstOrDefault()?.Id ?? 0, ProductPackagingId = packaging.FirstOrDefault()?.Id ?? 0, Quantity = 1 }; }
+    private void OpenInventoryItemForm() { CancelForms(); showInventoryItemForm = true; var defaultProduct = products.FirstOrDefault()?.Id ?? 0; var defaultPkg = packaging.FirstOrDefault(p => p.ProductId == defaultProduct)?.Id ?? packaging.FirstOrDefault()?.Id ?? 0; inventoryItemForm = new() { ProductId = defaultProduct, ProductPackagingId = defaultPkg, PalletId = null, Quantity = 1, Confirmed = false, QrCode = GenerateNewQrCode(defaultProduct) }; }
+    private string GenerateNewQrCode(int productId) => $"QR-{DateTime.UtcNow:yyyyMMdd}-{productId:000}-{Random.Shared.Next(1000, 9999)}";
+    private void GenerateRandomQrCode() { inventoryItemForm.QrCode = GenerateNewQrCode(inventoryItemForm.ProductId); }
+    private IEnumerable<ProductPackaging> AvailableInventoryPackagings => packaging.Where(p => p.ProductId == inventoryItemForm.ProductId);
+    private void SyncInventoryProductPackaging() { if (!AvailableInventoryPackagings.Any(p => p.Id == inventoryItemForm.ProductPackagingId)) inventoryItemForm.ProductPackagingId = AvailableInventoryPackagings.FirstOrDefault()?.Id ?? 0; }
+    private IEnumerable<IGrouping<int, InventoryItem>> GroupedInventoryItems => inventoryItems.GroupBy(i => i.ProductId);
+    private int PackagingPieces(int packagingId) => packaging.FirstOrDefault(p => p.Id == packagingId)?.Pieces ?? 1;
+    private string PackagingDescription(int packagingId) { var p = packaging.FirstOrDefault(x => x.Id == packagingId); if (p is null) return string.Empty; return $"{(string.IsNullOrWhiteSpace(p.Type) ? L["Package"] : p.Type)} ({p.Pieces:N0} {L["Pieces"]})"; }
+    private int ItemTotalPieces(InventoryItem item) { var pkgPieces = packaging.FirstOrDefault(p => p.Id == item.ProductPackagingId)?.Pieces ?? 1; var palletMult = item.PalletId.HasValue ? (pallets.FirstOrDefault(p => p.Id == item.PalletId.Value)?.Quantity ?? 1) : 1; return item.Quantity * palletMult * pkgPieces; }
+    private string InventoryItemDescription(InventoryItem item) { var pkgDesc = PackagingDescription(item.ProductPackagingId); if (item.PalletId.HasValue) { var pallet = pallets.FirstOrDefault(p => p.Id == item.PalletId.Value); return $"{pallet?.Name ?? L["Pallet"]} ({pallet?.Quantity:N0} {L["Packages"]}) · {pkgDesc}"; } return pkgDesc; }
     private string NewOrderNumber() => $"ORD-{DateTime.Today:yyyyMMdd}-{orders.Count + 1:000}";
     private string NewShipmentNumber() => $"SHP-{DateTime.Today:yyyyMMdd}-{shipments.Count + 1:000}";
     private IEnumerable<OrderItem> ShipmentOrderItems => orderItems.Where(item => item.OrderId == shipmentItemOrderId);
@@ -162,7 +314,7 @@ else
     private async Task ToggleShipmentHistory(int id) { expandedShipmentId = id; shipmentHistoryShipmentId = shipmentHistoryShipmentId == id ? null : id; if (shipmentHistoryShipmentId == id) shipmentHistory = await Api.GetShipmentHistoryAsync(id); }
     private async Task ClearOrderHistoryAsync(int id) { await Api.ClearOrderHistoryAsync(id); orderHistory = []; }
     private async Task ClearShipmentHistoryAsync(int id) { await Api.ClearShipmentHistoryAsync(id); shipmentHistory = []; }
-    private Task LoadCustomersAsync() => Reload(() => Api.GetCustomersAsync(), value => customers = value); private Task LoadProductsAsync() => Reload(() => Api.GetProductsAsync(), value => products = value); private Task LoadPackagingAsync() => Reload(() => Api.GetProductPackagingAsync(), value => packaging = value); private Task LoadPackagingTypesAsync() => Reload(() => Api.GetPackagingTypesAsync(), value => packagingTypes = value); private Task LoadPalletsAsync() => Reload(() => Api.GetPalletsAsync(), value => pallets = value); private Task LoadOrdersAsync() => Reload(() => Api.GetOrdersAsync(), value => orders = value); private Task LoadOrderItemsAsync() => Reload(() => Api.GetOrderItemsAsync(), value => orderItems = value); private Task LoadShipmentsAsync() => Reload(() => Api.GetShipmentsAsync(), value => shipments = value); private Task LoadShipmentItemsAsync() => Reload(() => Api.GetShipmentItemsAsync(), value => shipmentItems = value); private static async Task Reload<T>(Func<Task<List<T>>> load, Action<List<T>> assign) { assign(await load()); }
+    private Task LoadCustomersAsync() => Reload(() => Api.GetCustomersAsync(), value => customers = value); private Task LoadProductsAsync() => Reload(() => Api.GetProductsAsync(), value => products = value); private Task LoadPackagingAsync() => Reload(() => Api.GetProductPackagingAsync(), value => packaging = value); private Task LoadPackagingTypesAsync() => Reload(() => Api.GetPackagingTypesAsync(), value => packagingTypes = value); private Task LoadPalletsAsync() => Reload(() => Api.GetPalletsAsync(), value => pallets = value); private Task LoadOrdersAsync() => Reload(() => Api.GetOrdersAsync(), value => orders = value); private Task LoadOrderItemsAsync() => Reload(() => Api.GetOrderItemsAsync(), value => orderItems = value); private Task LoadShipmentsAsync() => Reload(() => Api.GetShipmentsAsync(), value => shipments = value); private Task LoadShipmentItemsAsync() => Reload(() => Api.GetShipmentItemsAsync(), value => shipmentItems = value); private Task LoadInventoryItemsAsync() => Reload(() => Api.GetInventoryItemsAsync(), value => inventoryItems = value); private static async Task Reload<T>(Func<Task<List<T>>> load, Action<List<T>> assign) { assign(await load()); }
     private string CustomerName(int id) => customers.FirstOrDefault(x => x.Id == id)?.Name ?? $"Customer #{id}"; private string ProductName(int id) => products.FirstOrDefault(x => x.Id == id)?.Name ?? $"Product #{id}";
     private IEnumerable<Order> SortedOrders => Sort(orderSort, orderSortAscending, orders, order => order.ScheduledDate ?? DateTime.MinValue, order => CustomerName(order.CustomerId), order => (int)order.Status);
     private IEnumerable<Shipment> SortedShipments => Sort(shipmentSort, shipmentSortAscending, shipments, shipment => shipment.ScheduledDate ?? DateTime.MinValue, shipment => CustomerName(shipment.CustomerId), shipment => (int)shipment.Status);
@@ -178,4 +330,8 @@ else
     private async Task SaveOrderItemAsync() { if (orderItemId is int id) await Api.UpdateOrderItemAsync(id, orderItemForm); else await Api.AddOrderItemAsync(orderItemForm); await LoadOrderItemsAsync(); CancelForms(); } private void EditOrderItem(OrderItem item) { CancelForms(); orderItemId = item.Id; orderItemForm = new() { OrderId = item.OrderId, ProductId = item.ProductId, Quantity = item.Quantity }; showOrderItemForm = true; } private async Task DeleteOrderItemAsync(int id) { await Api.RemoveOrderItemAsync(id); await LoadOrderItemsAsync(); }
     private async Task SaveShipmentAsync() { if (shipmentId is int id) await Api.UpdateShipmentAsync(id, shipmentForm); else await Api.AddShipmentAsync(shipmentForm); await LoadShipmentsAsync(); if (shipmentId is int updatedId && shipmentHistoryShipmentId == updatedId) shipmentHistory = await Api.GetShipmentHistoryAsync(updatedId); CancelForms(); } private void EditShipment(Shipment item) { CancelForms(); shipmentId = item.Id; shipmentForm = new() { ShipmentNumber = item.ShipmentNumber, CustomerId = item.CustomerId, CreatedAt = item.CreatedAt, ScheduledDate = item.ScheduledDate, ShippedAt = item.ShippedAt, Type = item.Type, Color = item.Color, Status = item.Status, TruckDeliveryConfirmed = item.TruckDeliveryConfirmed }; showShipmentForm = true; } private async Task DeleteShipmentAsync(int id) { await Api.RemoveShipmentAsync(id); await LoadShipmentsAsync(); }
     private async Task SaveShipmentItemAsync() { if (shipmentItemId is int id) await Api.UpdateShipmentItemAsync(id, shipmentItemForm); else await Api.AddShipmentItemAsync(shipmentItemForm); await LoadShipmentItemsAsync(); CancelForms(); } private void EditShipmentItem(ShipmentItem item) { CancelForms(); shipmentItemId = item.Id; shipmentItemOrderId = orderItems.FirstOrDefault(orderItem => orderItem.Id == item.OrderItemId)?.OrderId ?? 0; shipmentItemForm = new() { ShipmentId = item.ShipmentId, OrderItemId = item.OrderItemId, ProductPackagingId = item.ProductPackagingId, PalletId = item.PalletId, Quantity = item.Quantity }; showShipmentItemForm = true; } private async Task DeleteShipmentItemAsync(int id) { await Api.RemoveShipmentItemAsync(id); await LoadShipmentItemsAsync(); }
+    private async Task SaveInventoryItemAsync() { if (inventoryItemId is int id) await Api.UpdateInventoryItemAsync(id, inventoryItemForm); else await Api.AddInventoryItemAsync(inventoryItemForm); await LoadInventoryItemsAsync(); CancelForms(); }
+    private void EditInventoryItem(InventoryItem item) { CancelForms(); inventoryItemId = item.Id; inventoryItemForm = new() { ProductId = item.ProductId, ProductPackagingId = item.ProductPackagingId, PalletId = item.PalletId, Quantity = item.Quantity, Confirmed = item.Confirmed, QrCode = item.QrCode }; showInventoryItemForm = true; }
+    private async Task ConfirmInventoryItemAsync(int id) { await Api.ConfirmInventoryItemAsync(id); await LoadInventoryItemsAsync(); }
+    private async Task DeleteInventoryItemAsync(int id) { await Api.RemoveInventoryItemAsync(id); await LoadInventoryItemsAsync(); }
 }

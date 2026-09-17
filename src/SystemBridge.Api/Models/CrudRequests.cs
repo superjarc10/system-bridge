@@ -73,3 +73,13 @@ public sealed class ShipmentItemRequest
     public int? PalletId { get; set; }
     public int Quantity { get; set; }
 }
+
+public sealed class InventoryItemRequest
+{
+    public int ProductId { get; set; }
+    public string QrCode { get; set; } = string.Empty;
+    public int ProductPackagingId { get; set; }
+    public int? PalletId { get; set; }
+    public int Quantity { get; set; } = 1;
+    public bool Confirmed { get; set; }
+}

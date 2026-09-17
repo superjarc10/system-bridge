@@ -16,6 +16,13 @@ public sealed class ApiClient(HttpClient httpClient)
     private string? token;
 
     public bool IsAuthenticated => !string.IsNullOrWhiteSpace(token);
+    public string UserRole { get; private set; } = string.Empty;
+    public string CurrentUsername { get; private set; } = string.Empty;
+
+    public bool IsAdmin => IsAuthenticated && (string.Equals(UserRole, "Admin", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(UserRole));
+    public bool IsWorker => IsAuthenticated && string.Equals(UserRole, "Worker", StringComparison.OrdinalIgnoreCase);
+
+    public event Action? OnAuthStateChanged;
 
     public async Task<AuthResponse?> LoginAsync(LoginRequest request)
     {
@@ -27,7 +34,18 @@ public sealed class ApiClient(HttpClient httpClient)
 
         var result = await response.Content.ReadFromJsonAsync<AuthResponse>(JsonOptions);
         token = result?.Token;
+        UserRole = result?.Role ?? string.Empty;
+        CurrentUsername = result?.Username ?? request.Username;
+        OnAuthStateChanged?.Invoke();
         return result;
+    }
+
+    public void Logout()
+    {
+        token = null;
+        UserRole = string.Empty;
+        CurrentUsername = string.Empty;
+        OnAuthStateChanged?.Invoke();
     }
 
     public Task<Customer?> AddCustomerAsync(CustomerRequest customer) => SendJsonAsync<CustomerRequest, Customer>(HttpMethod.Post, "api/customers", customer);
@@ -87,6 +105,13 @@ public sealed class ApiClient(HttpClient httpClient)
     public Task<bool> RemoveShipmentItemAsync(int id) => SendDeleteAsync($"api/shipment-items/{id}");
     public Task<List<ShipmentItem>> GetShipmentItemsAsync() => GetManyAsync<ShipmentItem>("api/shipment-items");
     public Task<ShipmentItem?> GetShipmentItemAsync(int id) => GetOneAsync<ShipmentItem>($"api/shipment-items/{id}");
+
+    public Task<InventoryItem?> AddInventoryItemAsync(InventoryItemRequest item) => SendJsonAsync<InventoryItemRequest, InventoryItem>(HttpMethod.Post, "api/inventory-items", item);
+    public Task<InventoryItem?> UpdateInventoryItemAsync(int id, InventoryItemRequest item) => SendJsonAsync<InventoryItemRequest, InventoryItem>(HttpMethod.Put, $"api/inventory-items/{id}", item);
+    public Task<InventoryItem?> ConfirmInventoryItemAsync(int id) => SendJsonAsync<object?, InventoryItem>(HttpMethod.Post, $"api/inventory-items/{id}/confirm", null);
+    public Task<bool> RemoveInventoryItemAsync(int id) => SendDeleteAsync($"api/inventory-items/{id}");
+    public Task<List<InventoryItem>> GetInventoryItemsAsync() => GetManyAsync<InventoryItem>("api/inventory-items");
+    public Task<InventoryItem?> GetInventoryItemAsync(int id) => GetOneAsync<InventoryItem>($"api/inventory-items/{id}");
 
     private HttpRequestMessage CreateRequest(HttpMethod method, string uri)
     {

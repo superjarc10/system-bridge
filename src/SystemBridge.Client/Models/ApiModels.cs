@@ -130,9 +130,16 @@ public sealed class ShipmentItem
 public sealed class InventoryItem
 {
     public int Id { get; set; }
-    public string ProductSku { get; set; } = string.Empty;
-    public int QuantityOnHand { get; set; }
-    public DateTime UpdatedAt { get; set; }
+    public int ProductId { get; set; }
+    public string QrCode { get; set; } = string.Empty;
+    public int ProductPackagingId { get; set; }
+    public int? PalletId { get; set; }
+    public int Quantity { get; set; } = 1;
+    public bool Confirmed { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public Product? Product { get; set; }
+    public ProductPackaging? ProductPackaging { get; set; }
+    public Pallet? Pallet { get; set; }
 }
 
 public sealed class LoginRequest
@@ -145,6 +152,8 @@ public sealed class AuthResponse
 {
     public string Token { get; set; } = string.Empty;
     public DateTime ExpiresAt { get; set; }
+    public string Role { get; set; } = string.Empty;
+    public string Username { get; set; } = string.Empty;
 }
 
 public sealed class CustomerRequest
@@ -219,4 +228,14 @@ public sealed class ShipmentItemRequest
     public int ProductPackagingId { get; set; }
     public int? PalletId { get; set; }
     public int Quantity { get; set; }
+}
+
+public sealed class InventoryItemRequest
+{
+    public int ProductId { get; set; }
+    public string QrCode { get; set; } = string.Empty;
+    public int ProductPackagingId { get; set; }
+    public int? PalletId { get; set; }
+    public int Quantity { get; set; } = 1;
+    public bool Confirmed { get; set; }
 }
